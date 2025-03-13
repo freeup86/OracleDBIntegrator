@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<BorderPane prefHeight="600" prefWidth="800" xmlns="http://javafx.com/javafx/17"
+            xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.dbintegrator.controller.MainController">
+    <top>
+        <VBox spacing="10">
+            <padding>
+                <Insets top="10" right="10" bottom="10" left="10" />
+            </padding>
+
+            <HBox spacing="20" alignment="CENTER_LEFT">
+                <Label text="Oracle Database Integration Tool" style="-fx-font-size: 18; -fx-font-weight: bold;"/>
+            </HBox>
+
+            <HBox spacing="20" alignment="CENTER_LEFT">
+                <VBox>
+                    <Label fx:id="sourceDbLabel" text="Source: Not connected" />
+                    <Button fx:id="connectSourceButton" text="Connect to Source DB" />
+                </VBox>
+
+                <VBox>
+                    <Label fx:id="destDbLabel" text="Destination: Not connected" />
+                    <Button fx:id="connectDestButton" text="Connect to Destination DB" />
+                </VBox>
+            </HBox>
+
+            <HBox spacing="20" alignment="CENTER_LEFT">
+                <Label text="Integration Direction:" />
+                <RadioButton fx:id="sourceToDestRadio" text="Source → Destination" />
+                <RadioButton fx:id="destToSourceRadio" text="Destination → Source" />
+            </HBox>
+        </VBox>
+    </top>
+
+    <center>
+        <SplitPane dividerPositions="0.6" orientation="VERTICAL">
+            <items>
+                <VBox>
+                    <HBox spacing="10" VBox.vgrow="ALWAYS">
+                        <padding>
+                            <Insets top="10" right="10" bottom="10" left="10" />
+                        </padding>
+
+                        <VBox spacing="5" HBox.hgrow="ALWAYS">
+                            <Label text="Source Table:" />
+                            <ComboBox fx:id="sourceTableComboBox" maxWidth="Infinity" />
+                            <Label text="Columns:" />
+                            <ListView fx:id="sourceColumnsListView" VBox.vgrow="ALWAYS" />
+                        </VBox>
+
+                        <VBox spacing="10" alignment="CENTER">
+                            <Region VBox.vgrow="ALWAYS" />
+                            <Button fx:id="addMappingButton" text="Add Mapping →" />
+                            <Button fx:id="removeMappingButton" text="Remove Mapping" />
+                            <Region VBox.vgrow="ALWAYS" />
+                        </VBox>
+
+                        <VBox spacing="5" HBox.hgrow="ALWAYS">
+                            <Label text="Destination Table:" />
+                            <ComboBox fx:id="destTableComboBox" maxWidth="Infinity" />
+                            <Label text="Columns:" />
+                            <ListView fx:id="destColumnsListView" VBox.vgrow="ALWAYS" />
+                        </VBox>
+                    </HBox>
+                </VBox>
+
+                <VBox spacing="5">
+                    <padding>
+                        <Insets top="10" right="10" bottom="10" left="10" />
+                    </padding>
+                    <Label text="Field Mappings:" />
+                    <ListView fx:id="mappingsListView" VBox.vgrow="ALWAYS" />
+                    <HBox alignment="CENTER_RIGHT" spacing="10">
+                        <padding>
+                            <Insets top="10" />
+                        </padding>
+                        <Button fx:id="executeButton" text="Execute Integration" />
+                    </HBox>
+                </VBox>
+            </items>
+        </SplitPane>
+    </center>
+
+    <bottom>
+        <VBox>
+            <Label text="Log:" />
+            <TextArea fx:id="logTextArea" prefHeight="100" editable="false" />
+        </VBox>
+    </bottom>
+</BorderPane>
