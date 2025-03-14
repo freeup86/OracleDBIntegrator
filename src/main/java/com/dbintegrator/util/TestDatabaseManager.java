@@ -6,78 +6,38 @@ import java.sql.SQLException;
 import java.sql.Statement;
 
 public class TestDatabaseManager {
-    // Static references to keep connections alive throughout application lifecycle
-    private static Connection sourceConnection;
-    private static Connection destConnection;
-
     // String constants for connection URLs
-    private static final String SOURCE_URL = "jdbc:h2:mem:sourcedb;MODE=Oracle;DB_CLOSE_DELAY=-1";
-    private static final String DEST_URL = "jdbc:h2:mem:destdb;MODE=Oracle;DB_CLOSE_DELAY=-1";
+    private static final String SOURCE_URL = "jdbc:h2:mem:sourcedb;MODE=Oracle;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE";
+    private static final String DEST_URL = "jdbc:h2:mem:destdb;MODE=Oracle;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE";
     private static final String USERNAME = "sa";
     private static final String PASSWORD = "";
 
     public static DatabaseConnectionManager getSourceTestConnection() throws SQLException {
-        try {
-            // Ensure the H2 driver is loaded
-            Class.forName("org.h2.Driver");
+        DatabaseConnectionManager connectionManager = new DatabaseConnectionManager(
+                "localhost", 1521, "sourcedb", USERNAME, PASSWORD
+        );
 
-            // Create a new connection if it doesn't exist or is closed
-            if (sourceConnection == null || sourceConnection.isClosed()) {
-                sourceConnection = DriverManager.getConnection(SOURCE_URL, USERNAME, PASSWORD);
-                setupSourceTestData(sourceConnection);
-            }
-
-            // Create a custom DatabaseConnectionManager that always returns the same connection
-            return new DatabaseConnectionManager("localhost", 1521, "sourcedb", USERNAME, PASSWORD) {
-                @Override
-                public Connection getConnection() throws SQLException {
-                    if (sourceConnection == null || sourceConnection.isClosed()) {
-                        sourceConnection = DriverManager.getConnection(SOURCE_URL, USERNAME, PASSWORD);
-                    }
-                    return sourceConnection;
-                }
-
-                @Override
-                public void closeConnection() {
-                    // Do nothing - we want to keep the connection open
-                    System.out.println("Ignoring request to close source connection");
-                }
-            };
-        } catch (ClassNotFoundException e) {
-            throw new SQLException("H2 driver not found", e);
+        try (Connection conn = connectionManager.getConnection()) {
+            setupSourceTestData(conn);
+        } catch (SQLException e) {
+            throw new SQLException("Failed to set up source test database", e);
         }
+
+        return connectionManager;
     }
 
     public static DatabaseConnectionManager getDestTestConnection() throws SQLException {
-        try {
-            // Ensure the H2 driver is loaded
-            Class.forName("org.h2.Driver");
+        DatabaseConnectionManager connectionManager = new DatabaseConnectionManager(
+                "localhost", 1521, "destdb", USERNAME, PASSWORD
+        );
 
-            // Create a new connection if it doesn't exist or is closed
-            if (destConnection == null || destConnection.isClosed()) {
-                destConnection = DriverManager.getConnection(DEST_URL, USERNAME, PASSWORD);
-                setupDestTestData(destConnection);
-            }
-
-            // Create a custom DatabaseConnectionManager that always returns the same connection
-            return new DatabaseConnectionManager("localhost", 1521, "destdb", USERNAME, PASSWORD) {
-                @Override
-                public Connection getConnection() throws SQLException {
-                    if (destConnection == null || destConnection.isClosed()) {
-                        destConnection = DriverManager.getConnection(DEST_URL, USERNAME, PASSWORD);
-                    }
-                    return destConnection;
-                }
-
-                @Override
-                public void closeConnection() {
-                    // Do nothing - we want to keep the connection open
-                    System.out.println("Ignoring request to close destination connection");
-                }
-            };
-        } catch (ClassNotFoundException e) {
-            throw new SQLException("H2 driver not found", e);
+        try (Connection conn = connectionManager.getConnection()) {
+            setupDestTestData(conn);
+        } catch (SQLException e) {
+            throw new SQLException("Failed to set up destination test database", e);
         }
+
+        return connectionManager;
     }
 
     private static void setupSourceTestData(Connection conn) throws SQLException {
@@ -120,13 +80,15 @@ public class TestDatabaseManager {
         }
     }
 
-    // Method to test basic H2 connection
     public static boolean testBasicH2Connection() {
         try {
             Class.forName("org.h2.Driver");
-            Connection conn = DriverManager.getConnection("jdbc:h2:mem:test;DB_CLOSE_DELAY=-1", "sa", "");
-            conn.createStatement().execute("SELECT 1");
-            return true;
+            try (Connection conn = DriverManager.getConnection(
+                    "jdbc:h2:mem:test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+                    USERNAME, PASSWORD)) {
+                conn.createStatement().execute("SELECT 1");
+                return true;
+            }
         } catch (Exception e) {
             e.printStackTrace();
             return false;

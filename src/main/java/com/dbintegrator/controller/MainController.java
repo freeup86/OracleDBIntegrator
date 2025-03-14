@@ -9,6 +9,7 @@ import com.dbintegrator.ui.MultiProjectSelectionDialog;
 import com.dbintegrator.util.ConfigurationManager;
 import com.dbintegrator.util.DatabaseConnectionManager;
 import com.dbintegrator.util.TestDatabaseManager;
+import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
@@ -25,6 +26,7 @@ import java.io.StringWriter;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 public class MainController {
     @FXML private RadioButton sourceToDestRadio;
@@ -50,6 +52,8 @@ public class MainController {
     @FXML private Button testModeButton;
     @FXML private Button openH2ConsoleButton;
     @FXML private Button verifyResultsButton;
+    @FXML private TextArea sourceProjectDetailsArea;
+    @FXML private TextArea destProjectDetailsArea;
 
     private DatabaseConnectionManager sourceDbManager;
     private DatabaseConnectionManager destDbManager;
@@ -57,8 +61,6 @@ public class MainController {
     private DatabaseMetadataService destMetadataService;
     private ObservableList<ColumnMapping> mappings = FXCollections.observableArrayList();
     private ConfigurationManager configManager;
-    private Connection sourceConn;
-    private Connection destConn;
 
     // Multi-project selection fields
     private List<Project> selectedSourceProjects = new ArrayList<>();
@@ -69,80 +71,83 @@ public class MainController {
 
     @FXML
     public void initialize() {
+        setupUIComponents();
+        setupEventHandlers();
+        initializeConfigManager();
+        setupMappingsList();
+        tryAutoConnect();
+
+        // Add event handlers for testing tools buttons
+        testModeButton.setOnAction(event -> setupTestMode());
+        openH2ConsoleButton.setOnAction(event -> openH2Console());
+    }
+
+    private void setupUIComponents() {
         // Set up direction toggle
         directionToggle = new ToggleGroup();
         sourceToDestRadio.setToggleGroup(directionToggle);
         destToSourceRadio.setToggleGroup(directionToggle);
         sourceToDestRadio.setSelected(true);
 
-        // Set up database connection buttons
+        // Disable buttons initially
+        disableIntegrationControls();
+    }
+
+    private void setupEventHandlers() {
+        // Database connection buttons
         connectSourceButton.setOnAction(event -> connectToDatabase(true));
         connectDestButton.setOnAction(event -> connectToDatabase(false));
 
-        // Set up table selection combo boxes
+        // Table selection handlers
         sourceTableComboBox.setOnAction(event -> loadTableColumns(true));
         destTableComboBox.setOnAction(event -> loadTableColumns(false));
 
-        // Set up project selection buttons
+        // Project selection buttons
         selectSourceProjectsButton.setOnAction(event -> selectProjects(true));
         selectDestProjectsButton.setOnAction(event -> selectProjects(false));
-        selectSourceProjectsButton.setDisable(true);
-        selectDestProjectsButton.setDisable(true);
 
-        // Set up mapping buttons
+        // Mapping buttons
         addMappingButton.setOnAction(event -> addMapping());
         removeMappingButton.setOnAction(event -> removeMapping());
 
-        // Set up execute button
-        executeButton.setOnAction(event -> executeIntegration());
-        executeButton.setDisable(true);
-
-        // Set up test mode buttons
+        // Test mode and integration buttons
         testModeButton.setOnAction(event -> setupTestMode());
         openH2ConsoleButton.setOnAction(event -> openH2Console());
-        openH2ConsoleButton.setDisable(true);
-
-        // Set up verify results button
-        verifyResultsButton = new Button("Verify Results");
+        executeButton.setOnAction(event -> executeIntegration());
         verifyResultsButton.setOnAction(event -> verifyIntegrationResults());
-        verifyResultsButton.setDisable(true);
-
-        // Set up mappings list view
-        mappingsListView.setItems(mappings);
-
-        // Disable buttons until connections are established
-        sourceTableComboBox.setDisable(true);
-        destTableComboBox.setDisable(true);
-        addMappingButton.setDisable(true);
-        removeMappingButton.setDisable(true);
-
-        // Initialize configuration manager
-        configManager = new ConfigurationManager();
-
-        // Try to connect with saved credentials
-        tryAutoConnect();
     }
 
-    private void openH2Console() {
-        try {
-            // Start the H2 console
-            org.h2.tools.Console.main("-web", "-browser");
-            logTextArea.appendText("H2 Console opened. Use 'jdbc:h2:mem:sourcedb' or 'jdbc:h2:mem:destdb' as JDBC URL.\n");
-            logTextArea.appendText("Username: sa, Password: leave blank\n");
-        } catch (Exception e) {
-            showError("H2 Console Error", "Failed to open H2 Console: " + e.getMessage());
-        }
+    private void setupMappingsList() {
+        mappingsListView.setItems(mappings);
+    }
+
+    private void initializeConfigManager() {
+        configManager = new ConfigurationManager();
+    }
+
+    private void disableIntegrationControls() {
+        sourceTableComboBox.setDisable(true);
+        destTableComboBox.setDisable(true);
+        selectSourceProjectsButton.setDisable(true);
+        selectDestProjectsButton.setDisable(true);
+        addMappingButton.setDisable(true);
+        removeMappingButton.setDisable(true);
+        executeButton.setDisable(true);
+        openH2ConsoleButton.setDisable(true);
+        verifyResultsButton.setDisable(true);
     }
 
     private void setupTestMode() {
         try {
+            // Ensure H2 driver is loaded
+            Class.forName("org.h2.Driver");
+
             // Test if H2 is working properly
             boolean h2Working = TestDatabaseManager.testBasicH2Connection();
             logTextArea.appendText("H2 test connection: " + (h2Working ? "SUCCESS" : "FAILED") + "\n");
 
             if (!h2Working) {
-                logTextArea.appendText("H2 database not working properly. Cannot enable test mode.\n");
-                return;
+                throw new SQLException("H2 database connection test failed");
             }
 
             // Set up test connections
@@ -150,19 +155,19 @@ public class MainController {
             sourceDbManager = TestDatabaseManager.getSourceTestConnection();
             destDbManager = TestDatabaseManager.getDestTestConnection();
 
-            // Update UI
+            // Update connection labels
             sourceDbLabel.setText("Source: Test Database Connection");
             destDbLabel.setText("Destination: Test Database Connection");
 
-            // Initialize services
+            // Initialize metadata services
             sourceMetadataService = new DatabaseMetadataService(sourceDbManager);
             destMetadataService = new DatabaseMetadataService(destDbManager);
 
-            // Load tables
+            // Load tables and enable controls
             loadTables(true);
             loadTables(false);
 
-            // Enable controls
+            // Enable test mode specific controls
             sourceTableComboBox.setDisable(false);
             destTableComboBox.setDisable(false);
             selectSourceProjectsButton.setDisable(false);
@@ -172,45 +177,88 @@ public class MainController {
             // Set test mode flag
             testModeEnabled = true;
 
-            logTextArea.appendText("Test mode enabled with sample databases\n");
+            // Create an information dialog
+            Platform.runLater(() -> {
+                Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                alert.setTitle("Test Mode Enabled");
+                alert.setHeaderText("Test Mode is Now Active");
+                alert.setContentText("Test mode has been enabled with sample databases.\n\nReturn to the 'Integration' tab to perform test integrations.");
+
+                // Add a custom image or icon if desired
+                // alert.setGraphic(new ImageView(new Image("path/to/test-mode-icon.png")));
+
+                // Customize button
+                ButtonType okButton = new ButtonType("Go to Integration Tab", ButtonBar.ButtonData.OK_DONE);
+                alert.getButtonTypes().setAll(okButton);
+
+                // Show the dialog
+                Optional<ButtonType> result = alert.showAndWait();
+
+                // If the user clicks the button, switch to the integration tab
+                if (result.isPresent() && result.get() == okButton) {
+                    // Assuming the TabPane is a child of the scene
+                    TabPane tabPane = (TabPane) testModeButton.getScene().lookup(".tab-pane");
+                    if (tabPane != null) {
+                        tabPane.getSelectionModel().select(0); // Select the first tab (Database Integration)
+                    }
+                }
+            });
+
+            logTextArea.appendText("Test mode successfully enabled\n");
 
         } catch (Exception e) {
-            // Full error reporting
-            logTextArea.appendText("ERROR setting up test mode: " + e.getMessage() + "\n");
+            // Comprehensive error handling
+            logTextArea.appendText("Test mode setup failed: " + e.getMessage() + "\n");
 
-            // Get detailed stack trace for diagnosis
+            // Log full stack trace
             StringWriter sw = new StringWriter();
             PrintWriter pw = new PrintWriter(sw);
             e.printStackTrace(pw);
-            logTextArea.appendText("Stack trace:\n" + sw.toString());
+            logTextArea.appendText("Full error details:\n" + sw.toString() + "\n");
 
-            showError("Test Setup Error", "Failed to set up test databases: " + e.getMessage());
+            showError("Test Mode Error", "Failed to set up test mode: " + e.getMessage());
         }
     }
 
-
-    private void verifyIntegrationResults() {
+    private void connectToDatabase(boolean isSource) {
         try {
-            if (destDbManager == null) {
-                logTextArea.appendText("No destination database connection available\n");
-                return;
-            }
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/dbintegrator/ui/database_connection.fxml"));
+            VBox root = loader.load();
+            DatabaseConnectionController controller = loader.getController();
 
-            try (Connection conn = destDbManager.getConnection();
-                 Statement stmt = conn.createStatement();
-                 ResultSet rs = stmt.executeQuery("SELECT id, name, description FROM PA_PROJECTS")) {
+            // Set source/destination flag and load saved connection if available
+            controller.setIsSource(isSource);
+            controller.loadSavedConnection();
 
-                logTextArea.appendText("Integration Results (PA_PROJECTS table):\n");
-                logTextArea.appendText("------------------------------------------\n");
-                while (rs.next()) {
-                    logTextArea.appendText(rs.getInt("id") + ": " +
-                            rs.getString("name") + " - " +
-                            rs.getString("description") + "\n");
+            Stage dialog = new Stage();
+            dialog.initModality(Modality.APPLICATION_MODAL);
+            dialog.setTitle("Connect to " + (isSource ? "P6" : "EBS") + " Database");
+            dialog.setScene(new Scene(root));
+            dialog.showAndWait();
+
+            if (controller.getConnectionManager() != null) {
+                if (isSource) {
+                    sourceDbManager = controller.getConnectionManager();
+                    sourceDbLabel.setText("Source: " + sourceDbManager.getConnectionInfo());
+                    sourceMetadataService = new DatabaseMetadataService(sourceDbManager);
+                    loadTables(true);
+                    selectSourceProjectsButton.setDisable(false);
+                } else {
+                    destDbManager = controller.getConnectionManager();
+                    destDbLabel.setText("Destination: " + destDbManager.getConnectionInfo());
+                    destMetadataService = new DatabaseMetadataService(destDbManager);
+                    loadTables(false);
+                    selectDestProjectsButton.setDisable(false);
                 }
-                logTextArea.appendText("------------------------------------------\n");
+
+                // Enable table selections when both connections are established
+                if (sourceDbManager != null && destDbManager != null) {
+                    sourceTableComboBox.setDisable(false);
+                    destTableComboBox.setDisable(false);
+                }
             }
-        } catch (SQLException e) {
-            logTextArea.appendText("Error verifying results: " + e.getMessage() + "\n");
+        } catch (IOException | SQLException e) {
+            showError("Connection Error", e.getMessage());
         }
     }
 
@@ -254,45 +302,40 @@ public class MainController {
         }
     }
 
-    private void connectToDatabase(boolean isSource) {
+    private void loadTables(boolean isSource) throws SQLException {
+        DatabaseMetadataService metadataService = isSource ? sourceMetadataService : destMetadataService;
+        ComboBox<String> comboBox = isSource ? sourceTableComboBox : destTableComboBox;
+
+        List<String> tableNames = metadataService.getTableNames();
+        comboBox.setItems(FXCollections.observableArrayList(tableNames));
+
+        if (!tableNames.isEmpty()) {
+            comboBox.setValue(tableNames.get(0));
+            loadTableColumns(isSource);
+        }
+    }
+
+    private void loadTableColumns(boolean isSource) {
         try {
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/dbintegrator/ui/database_connection.fxml"));
-            VBox root = loader.load();
-            DatabaseConnectionController controller = loader.getController();
+            String selectedTable = isSource ?
+                    sourceTableComboBox.getValue() : destTableComboBox.getValue();
 
-            // Set source/destination flag and load saved connection if available
-            controller.setIsSource(isSource);
-            controller.loadSavedConnection();
+            if (selectedTable != null) {
+                DatabaseMetadataService metadataService =
+                        isSource ? sourceMetadataService : destMetadataService;
+                ListView<TableColumn> listView =
+                        isSource ? sourceColumnsListView : destColumnsListView;
 
-            Stage dialog = new Stage();
-            dialog.initModality(Modality.APPLICATION_MODAL);
-            dialog.setTitle("Connect to " + (isSource ? "Source" : "Destination") + " Database");
-            dialog.setScene(new Scene(root));
-            dialog.showAndWait();
+                List<TableColumn> columns = metadataService.getTableColumns(selectedTable);
+                listView.setItems(FXCollections.observableArrayList(columns));
 
-            if (controller.getConnectionManager() != null) {
-                if (isSource) {
-                    sourceDbManager = controller.getConnectionManager();
-                    sourceDbLabel.setText("Source: " + sourceDbManager.getConnectionInfo());
-                    sourceMetadataService = new DatabaseMetadataService(sourceDbManager);
-                    loadTables(true);
-                    selectSourceProjectsButton.setDisable(false);
-                } else {
-                    destDbManager = controller.getConnectionManager();
-                    destDbLabel.setText("Destination: " + destDbManager.getConnectionInfo());
-                    destMetadataService = new DatabaseMetadataService(destDbManager);
-                    loadTables(false);
-                    selectDestProjectsButton.setDisable(false);
-                }
-
-                // Enable table selections when both connections are established
-                if (sourceDbManager != null && destDbManager != null) {
-                    sourceTableComboBox.setDisable(false);
-                    destTableComboBox.setDisable(false);
+                // Enable add mapping when both tables selected
+                if (sourceTableComboBox.getValue() != null && destTableComboBox.getValue() != null) {
+                    addMappingButton.setDisable(false);
                 }
             }
-        } catch (IOException | SQLException e) {
-            showError("Connection Error", e.getMessage());
+        } catch (SQLException e) {
+            showError("Database Error", e.getMessage());
         }
     }
 
@@ -333,53 +376,22 @@ public class MainController {
     private void updateProjectsLabel(boolean isSource) {
         List<Project> projects = isSource ? selectedSourceProjects : selectedDestProjects;
         Label label = isSource ? sourceProjectsLabel : destProjectsLabel;
+        TextArea projectDetailsArea = isSource ? sourceProjectDetailsArea : destProjectDetailsArea;
 
         if (projects.isEmpty()) {
             label.setText("No " + (isSource ? "source" : "destination") + " projects selected");
-        } else if (projects.size() == 1) {
-            Project p = projects.get(0);
-            label.setText((isSource ? "Source" : "Destination") + " Project: " +
-                    p.getName() + " (ID: " + p.getId() + ")");
+            projectDetailsArea.clear();
+            projectDetailsArea.setPromptText("Selected Project IDs Will Appear Here");
         } else {
-            label.setText((isSource ? "Source" : "Destination") +
-                    " Projects: " + projects.size() + " selected");
-        }
-    }
+            label.setText((isSource ? "Source" : "Destination") + " Projects: " + projects.size() + " selected");
 
-    private void loadTables(boolean isSource) throws SQLException {
-        DatabaseMetadataService metadataService = isSource ? sourceMetadataService : destMetadataService;
-        ComboBox<String> comboBox = isSource ? sourceTableComboBox : destTableComboBox;
-
-        List<String> tableNames = metadataService.getTableNames();
-        comboBox.setItems(FXCollections.observableArrayList(tableNames));
-
-        if (!tableNames.isEmpty()) {
-            comboBox.setValue(tableNames.get(0));
-            loadTableColumns(isSource);
-        }
-    }
-
-    private void loadTableColumns(boolean isSource) {
-        try {
-            String selectedTable = isSource ?
-                    sourceTableComboBox.getValue() : destTableComboBox.getValue();
-
-            if (selectedTable != null) {
-                DatabaseMetadataService metadataService =
-                        isSource ? sourceMetadataService : destMetadataService;
-                ListView<TableColumn> listView =
-                        isSource ? sourceColumnsListView : destColumnsListView;
-
-                List<TableColumn> columns = metadataService.getTableColumns(selectedTable);
-                listView.setItems(FXCollections.observableArrayList(columns));
-
-                // Enable add mapping when both tables selected
-                if (sourceTableComboBox.getValue() != null && destTableComboBox.getValue() != null) {
-                    addMappingButton.setDisable(false);
-                }
+            // Build project ID list
+            StringBuilder projectIds = new StringBuilder();
+            for (Project project : projects) {
+                projectIds.append(project.getName()).append(" (ID: ").append(project.getId()).append(")").append("\n");
             }
-        } catch (SQLException e) {
-            showError("Database Error", e.getMessage());
+
+            projectDetailsArea.setText(projectIds.toString());
         }
     }
 
@@ -501,11 +513,49 @@ public class MainController {
         }
     }
 
+    private void verifyIntegrationResults() {
+        try {
+            if (destDbManager == null) {
+                logTextArea.appendText("No destination database connection available\n");
+                return;
+            }
+
+            try (Connection conn = destDbManager.getConnection();
+                 Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery("SELECT id, name, description FROM PA_PROJECTS")) {
+
+                logTextArea.appendText("Integration Results (PA_PROJECTS table):\n");
+                logTextArea.appendText("------------------------------------------\n");
+                while (rs.next()) {
+                    logTextArea.appendText(rs.getInt("id") + ": " +
+                            rs.getString("name") + " - " +
+                            rs.getString("description") + "\n");
+                }
+                logTextArea.appendText("------------------------------------------\n");
+            }
+        } catch (SQLException e) {
+            logTextArea.appendText("Error verifying results: " + e.getMessage() + "\n");
+        }
+    }
+
+    private void openH2Console() {
+        try {
+            // Start the H2 console
+            org.h2.tools.Console.main("-web", "-browser");
+            logTextArea.appendText("H2 Console opened. Use 'jdbc:h2:mem:sourcedb' or 'jdbc:h2:mem:destdb' as JDBC URL.\n");
+            logTextArea.appendText("Username: sa, Password: leave blank\n");
+        } catch (Exception e) {
+            showError("H2 Console Error", "Failed to open H2 Console: " + e.getMessage());
+        }
+    }
+
     private void showError(String title, String message) {
-        Alert alert = new Alert(Alert.AlertType.ERROR);
-        alert.setTitle(title);
-        alert.setHeaderText(null);
-        alert.setContentText(message);
-        alert.showAndWait();
+        Platform.runLater(() -> {
+            Alert alert = new Alert(Alert.AlertType.ERROR);
+            alert.setTitle(title);
+            alert.setHeaderText(null);
+            alert.setContentText(message);
+            alert.showAndWait();
+        });
     }
 }

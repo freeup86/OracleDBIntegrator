@@ -30,7 +30,7 @@ public class MultiProjectSelectionDialog extends Dialog<List<Project>> {
         this.tableName = tableName;
 
         setTitle("Select " + (isSource ? "Source" : "Destination") + " Projects");
-        setHeaderText("Select projects from " + tableName);
+        setHeaderText("Select projects from " + tableName + " table");
 
         // Set up dialog buttons
         ButtonType selectButtonType = new ButtonType("Select", ButtonBar.ButtonData.OK_DONE);
