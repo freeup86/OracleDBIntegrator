@@ -20,6 +20,11 @@ public class DataIntegrationService {
     }
 
     public int integrateData(List<ColumnMapping> mappings) throws SQLException {
+        return integrateData(mappings, null, null);
+    }
+
+    public int integrateData(List<ColumnMapping> mappings,
+                             String sourceWhereClause, String destWhereClause) throws SQLException {
         if (mappings.isEmpty()) {
             return 0;
         }
@@ -43,8 +48,12 @@ public class DataIntegrationService {
             String sourceTable = firstMapping.getSourceTable();
             String destTable = firstMapping.getDestinationTable();
 
-            // Retrieve data from source table
+            // Retrieve data from source table with the source WHERE clause
             StringBuilder sourceQueryBuilder = new StringBuilder("SELECT ");
+
+            // Always include ID for reference
+            sourceQueryBuilder.append("ID, ");
+
             for (int i = 0; i < tableMappings.size(); i++) {
                 sourceQueryBuilder.append(tableMappings.get(i).getSourceColumn().getName());
                 if (i < tableMappings.size() - 1) {
@@ -53,66 +62,59 @@ public class DataIntegrationService {
             }
             sourceQueryBuilder.append(" FROM ").append(sourceTable);
 
-            // Prepare to update destination table
-            StringBuilder updateQueryBuilder = new StringBuilder("UPDATE ").append(destTable).append(" SET ");
-            for (int i = 0; i < tableMappings.size(); i++) {
-                updateQueryBuilder.append(tableMappings.get(i).getDestinationColumn().getName())
-                        .append(" = ?");
-                if (i < tableMappings.size() - 1) {
-                    updateQueryBuilder.append(", ");
-                }
+            if (sourceWhereClause != null && !sourceWhereClause.isEmpty()) {
+                sourceQueryBuilder.append(" WHERE ").append(sourceWhereClause);
             }
-            // In a real application, you'd need a proper WHERE clause to match records
-            // This is simplified for demonstration purposes
-            updateQueryBuilder.append(" WHERE ROWID = ?");
+
+            // Log the operation
+            System.out.println("Executing source query: " + sourceQueryBuilder);
 
             try (Connection sourceConn = sourceDbManager.getConnection();
-                 Connection destConn = destDbManager.getConnection();
                  Statement sourceStmt = sourceConn.createStatement();
                  ResultSet sourceData = sourceStmt.executeQuery(sourceQueryBuilder.toString())) {
 
-                // Get ROWIDs from destination table for matching
-                Map<String, String> destRowIds = getDestinationRowIds(destConn, destTable);
+                // Build the update query with destination WHERE clause
+                StringBuilder updateQueryBuilder = new StringBuilder("UPDATE ")
+                        .append(destTable)
+                        .append(" SET ");
 
-                while (sourceData.next()) {
-                    // Get the primary key or unique identifier for matching
-                    // This is simplified - you'd need proper record matching logic
-                    String sourceKey = String.valueOf(sourceData.getRow());
-                    String destRowId = destRowIds.getOrDefault(sourceKey, null);
-
-                    if (destRowId != null) {
-                        try (PreparedStatement updateStmt = destConn.prepareStatement(updateQueryBuilder.toString())) {
-                            // Set parameter values from source data
-                            for (int i = 0; i < tableMappings.size(); i++) {
-                                updateStmt.setObject(i + 1, sourceData.getObject(tableMappings.get(i).getSourceColumn().getName()));
-                            }
-                            updateStmt.setString(tableMappings.size() + 1, destRowId);
-
-                            int rowsUpdated = updateStmt.executeUpdate();
-                            totalRowsUpdated += rowsUpdated;
-                        }
+                for (int i = 0; i < tableMappings.size(); i++) {
+                    updateQueryBuilder.append(tableMappings.get(i).getDestinationColumn().getName())
+                            .append(" = ?");
+                    if (i < tableMappings.size() - 1) {
+                        updateQueryBuilder.append(", ");
                     }
+                }
+
+                if (destWhereClause != null && !destWhereClause.isEmpty()) {
+                    updateQueryBuilder.append(" WHERE ").append(destWhereClause);
+                } else {
+                    // Safety measure - don't update everything if no WHERE clause
+                    updateQueryBuilder.append(" WHERE ROWNUM = 1");
+                }
+
+                // Log the update query
+                System.out.println("Preparing update query: " + updateQueryBuilder);
+
+                if (sourceData.next()) {
+                    try (Connection destConn = destDbManager.getConnection();
+                         PreparedStatement updateStmt = destConn.prepareStatement(updateQueryBuilder.toString())) {
+
+                        // Set values from source to destination
+                        for (int i = 0; i < tableMappings.size(); i++) {
+                            updateStmt.setObject(i + 1,
+                                    sourceData.getObject(tableMappings.get(i).getSourceColumn().getName()));
+                        }
+
+                        int rowsUpdated = updateStmt.executeUpdate();
+                        totalRowsUpdated += rowsUpdated;
+                    }
+                } else {
+                    System.out.println("No source data found for the specified criteria.");
                 }
             }
         }
 
         return totalRowsUpdated;
-    }
-
-    // In a real application, you'd need proper record matching logic
-    // This is simplified for demonstration purposes
-    private Map<String, String> getDestinationRowIds(Connection destConn, String destTable) throws SQLException {
-        Map<String, String> rowIds = new HashMap<>();
-        String query = "SELECT ROWID FROM " + destTable;
-
-        try (Statement stmt = destConn.createStatement();
-             ResultSet rs = stmt.executeQuery(query)) {
-            int rowNum = 1;
-            while (rs.next()) {
-                rowIds.put(String.valueOf(rowNum++), rs.getString(1));
-            }
-        }
-
-        return rowIds;
     }
 }
