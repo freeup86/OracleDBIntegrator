@@ -29,7 +29,7 @@ public class MultiProjectSelectionDialog extends Dialog<List<Project>> {
         this.dbManager = dbManager;
         this.tableName = tableName;
 
-        setTitle("Select " + (isSource ? "Source" : "Destination") + " Projects");
+        setTitle("Select " + (isSource ? "P6" : "EBS") + " Projects");
         setHeaderText("Select projects from " + tableName + " table");
 
         // Set up dialog buttons

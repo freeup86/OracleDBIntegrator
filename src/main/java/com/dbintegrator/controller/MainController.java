@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Optional;
 
 public class MainController {
+    // Project Integration Tab Components
     @FXML private RadioButton sourceToDestRadio;
     @FXML private RadioButton destToSourceRadio;
     @FXML private ToggleGroup directionToggle;
@@ -55,6 +56,7 @@ public class MainController {
     @FXML private TextArea sourceProjectDetailsArea;
     @FXML private TextArea destProjectDetailsArea;
 
+    // Database and Project Management
     private DatabaseConnectionManager sourceDbManager;
     private DatabaseConnectionManager destDbManager;
     private DatabaseMetadataService sourceMetadataService;
@@ -77,9 +79,89 @@ public class MainController {
         setupMappingsList();
         tryAutoConnect();
 
-        // Add event handlers for testing tools buttons
-        testModeButton.setOnAction(event -> setupTestMode());
-        openH2ConsoleButton.setOnAction(event -> openH2Console());
+        // Ensure task integration is setup
+        Platform.runLater(() -> {
+            if (sourceDbManager != null && destDbManager != null) {
+                setupTaskIntegrationTab();
+            }
+        });
+    }
+
+    private TaskIntegrationController findTaskIntegrationController() {
+        try {
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/dbintegrator/ui/task_integration.fxml"));
+            loader.load(); // This ensures the controller is created
+            return loader.getController();
+        } catch (IOException e) {
+            logTextArea.appendText("Error loading Task Integration Controller: " + e.getMessage() + "\n");
+            return null;
+        }
+    }
+
+    private void setupTaskIntegrationTab() {
+        try {
+            System.out.println("Setting up Task Integration Tab");
+            System.out.println("Source DB Manager: " + (sourceDbManager != null));
+            System.out.println("Dest DB Manager: " + (destDbManager != null));
+
+            // Find the Task Integration controller
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/dbintegrator/ui/task_integration.fxml"));
+
+            try {
+                loader.load(); // This ensures the controller is created
+                TaskIntegrationController controller = loader.getController();
+
+                if (controller == null) {
+                    System.err.println("Could not find TaskIntegrationController");
+                    return;
+                }
+
+                // Force project loading
+                Platform.runLater(() -> {
+                    // Explicitly set database managers
+                    if (sourceDbManager != null) {
+                        System.out.println("Setting source DB manager in Task Integration Tab");
+                        controller.setSourceDbManager(sourceDbManager);
+                    }
+
+                    if (destDbManager != null) {
+                        System.out.println("Setting destination DB manager in Task Integration Tab");
+                        controller.setDestDbManager(destDbManager);
+                    }
+                });
+            } catch (IOException e) {
+                System.err.println("Error loading Task Integration FXML: " + e.getMessage());
+                e.printStackTrace();
+            }
+        } catch (Exception e) {
+            System.err.println("Error in setupTaskIntegrationTab:");
+            e.printStackTrace();
+        }
+    }
+
+    // Add this helper method
+    private void printTableContents(DatabaseConnectionManager dbManager, String tableName) {
+        try (Connection conn = dbManager.getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT id, name, description FROM " + tableName)) {
+
+            System.out.println("Contents of " + tableName + " table:");
+            int count = 0;
+            while (rs.next()) {
+                count++;
+                System.out.println("Project " + count + ": " +
+                        "ID=" + rs.getInt("id") +
+                        ", Name=" + rs.getString("name") +
+                        ", Description=" + rs.getString("description"));
+            }
+
+            if (count == 0) {
+                System.err.println("NO PROJECTS FOUND IN TABLE: " + tableName);
+            }
+        } catch (SQLException e) {
+            System.err.println("Error printing table contents for " + tableName + ": " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     private void setupUIComponents() {
@@ -137,86 +219,46 @@ public class MainController {
         verifyResultsButton.setDisable(true);
     }
 
-    private void setupTestMode() {
-        try {
-            // Ensure H2 driver is loaded
-            Class.forName("org.h2.Driver");
-
-            // Test if H2 is working properly
-            boolean h2Working = TestDatabaseManager.testBasicH2Connection();
-            logTextArea.appendText("H2 test connection: " + (h2Working ? "SUCCESS" : "FAILED") + "\n");
-
-            if (!h2Working) {
-                throw new SQLException("H2 database connection test failed");
+    private void tryAutoConnect() {
+        // Try source connection
+        if (configManager.hasSourceConnection()) {
+            try {
+                sourceDbManager = configManager.getSourceConnection();
+                if (sourceDbManager != null) {
+                    sourceDbLabel.setText("Source: " + sourceDbManager.getConnectionInfo());
+                    sourceMetadataService = new DatabaseMetadataService(sourceDbManager);
+                    loadTables(true);
+                    logTextArea.appendText("Connected to source database using saved credentials\n");
+                    selectSourceProjectsButton.setDisable(false);
+                }
+            } catch (SQLException e) {
+                logTextArea.appendText("Failed to connect to source with saved credentials: " + e.getMessage() + "\n");
             }
+        }
 
-            // Set up test connections
-            logTextArea.appendText("Setting up test connections...\n");
-            sourceDbManager = TestDatabaseManager.getSourceTestConnection();
-            destDbManager = TestDatabaseManager.getDestTestConnection();
+        // Try destination connection
+        if (configManager.hasDestConnection()) {
+            try {
+                destDbManager = configManager.getDestConnection();
+                if (destDbManager != null) {
+                    destDbLabel.setText("Destination: " + destDbManager.getConnectionInfo());
+                    destMetadataService = new DatabaseMetadataService(destDbManager);
+                    loadTables(false);
+                    logTextArea.appendText("Connected to destination database using saved credentials\n");
+                    selectDestProjectsButton.setDisable(false);
+                }
+            } catch (SQLException e) {
+                logTextArea.appendText("Failed to connect to destination with saved credentials: " + e.getMessage() + "\n");
+            }
+        }
 
-            // Update connection labels
-            sourceDbLabel.setText("Source: Test Database Connection");
-            destDbLabel.setText("Destination: Test Database Connection");
-
-            // Initialize metadata services
-            sourceMetadataService = new DatabaseMetadataService(sourceDbManager);
-            destMetadataService = new DatabaseMetadataService(destDbManager);
-
-            // Load tables and enable controls
-            loadTables(true);
-            loadTables(false);
-
-            // Enable test mode specific controls
+        // Enable table selections if both connections established
+        if (sourceDbManager != null && destDbManager != null) {
             sourceTableComboBox.setDisable(false);
             destTableComboBox.setDisable(false);
-            selectSourceProjectsButton.setDisable(false);
-            selectDestProjectsButton.setDisable(false);
-            openH2ConsoleButton.setDisable(false);
 
-            // Set test mode flag
-            testModeEnabled = true;
-
-            // Create an information dialog
-            Platform.runLater(() -> {
-                Alert alert = new Alert(Alert.AlertType.INFORMATION);
-                alert.setTitle("Test Mode Enabled");
-                alert.setHeaderText("Test Mode is Now Active");
-                alert.setContentText("Test mode has been enabled with sample databases.\n\nReturn to the 'Integration' tab to perform test integrations.");
-
-                // Add a custom image or icon if desired
-                // alert.setGraphic(new ImageView(new Image("path/to/test-mode-icon.png")));
-
-                // Customize button
-                ButtonType okButton = new ButtonType("Go to Integration Tab", ButtonBar.ButtonData.OK_DONE);
-                alert.getButtonTypes().setAll(okButton);
-
-                // Show the dialog
-                Optional<ButtonType> result = alert.showAndWait();
-
-                // If the user clicks the button, switch to the integration tab
-                if (result.isPresent() && result.get() == okButton) {
-                    // Assuming the TabPane is a child of the scene
-                    TabPane tabPane = (TabPane) testModeButton.getScene().lookup(".tab-pane");
-                    if (tabPane != null) {
-                        tabPane.getSelectionModel().select(0); // Select the first tab (Database Integration)
-                    }
-                }
-            });
-
-            logTextArea.appendText("Test mode successfully enabled\n");
-
-        } catch (Exception e) {
-            // Comprehensive error handling
-            logTextArea.appendText("Test mode setup failed: " + e.getMessage() + "\n");
-
-            // Log full stack trace
-            StringWriter sw = new StringWriter();
-            PrintWriter pw = new PrintWriter(sw);
-            e.printStackTrace(pw);
-            logTextArea.appendText("Full error details:\n" + sw.toString() + "\n");
-
-            showError("Test Mode Error", "Failed to set up test mode: " + e.getMessage());
+            // Setup task integration
+            setupTaskIntegrationTab();
         }
     }
 
@@ -255,50 +297,22 @@ public class MainController {
                 if (sourceDbManager != null && destDbManager != null) {
                     sourceTableComboBox.setDisable(false);
                     destTableComboBox.setDisable(false);
+
+                    // Setup task integration
+                    setupTaskIntegrationTab();
                 }
+            }
+
+            // Enable table selections when both connections are established
+            if (sourceDbManager != null && destDbManager != null) {
+                sourceTableComboBox.setDisable(false);
+                destTableComboBox.setDisable(false);
+
+                // Setup task integration
+                setupTaskIntegrationTab();
             }
         } catch (IOException | SQLException e) {
             showError("Connection Error", e.getMessage());
-        }
-    }
-
-    private void tryAutoConnect() {
-        // Try source connection
-        if (configManager.hasSourceConnection()) {
-            try {
-                sourceDbManager = configManager.getSourceConnection();
-                if (sourceDbManager != null) {
-                    sourceDbLabel.setText("Source: " + sourceDbManager.getConnectionInfo());
-                    sourceMetadataService = new DatabaseMetadataService(sourceDbManager);
-                    loadTables(true);
-                    logTextArea.appendText("Connected to source database using saved credentials\n");
-                    selectSourceProjectsButton.setDisable(false);
-                }
-            } catch (SQLException e) {
-                logTextArea.appendText("Failed to connect to source with saved credentials: " + e.getMessage() + "\n");
-            }
-        }
-
-        // Try destination connection
-        if (configManager.hasDestConnection()) {
-            try {
-                destDbManager = configManager.getDestConnection();
-                if (destDbManager != null) {
-                    destDbLabel.setText("Destination: " + destDbManager.getConnectionInfo());
-                    destMetadataService = new DatabaseMetadataService(destDbManager);
-                    loadTables(false);
-                    logTextArea.appendText("Connected to destination database using saved credentials\n");
-                    selectDestProjectsButton.setDisable(false);
-                }
-            } catch (SQLException e) {
-                logTextArea.appendText("Failed to connect to destination with saved credentials: " + e.getMessage() + "\n");
-            }
-        }
-
-        // Enable table selections if both connections established
-        if (sourceDbManager != null && destDbManager != null) {
-            sourceTableComboBox.setDisable(false);
-            destTableComboBox.setDisable(false);
         }
     }
 
@@ -431,6 +445,89 @@ public class MainController {
                 removeMappingButton.setDisable(true);
                 executeButton.setDisable(true);
             }
+        }
+    }
+
+    private void setupTestMode() {
+        try {
+            // Ensure H2 driver is loaded
+            Class.forName("org.h2.Driver");
+
+            // Test if H2 is working properly
+            boolean h2Working = TestDatabaseManager.testBasicH2Connection();
+            logTextArea.appendText("H2 test connection: " + (h2Working ? "SUCCESS" : "FAILED") + "\n");
+
+            if (!h2Working) {
+                throw new SQLException("H2 database connection test failed");
+            }
+
+            // Set up test connections
+            logTextArea.appendText("Setting up test connections...\n");
+            sourceDbManager = TestDatabaseManager.getSourceTestConnection();
+            destDbManager = TestDatabaseManager.getDestTestConnection();
+
+            // Update connection labels
+            sourceDbLabel.setText("Source: Test Database Connection");
+            destDbLabel.setText("Destination: Test Database Connection");
+
+            // Initialize metadata services
+            sourceMetadataService = new DatabaseMetadataService(sourceDbManager);
+            destMetadataService = new DatabaseMetadataService(destDbManager);
+
+            // Load tables and enable controls
+            loadTables(true);
+            loadTables(false);
+
+            // Enable test mode specific controls
+            sourceTableComboBox.setDisable(false);
+            destTableComboBox.setDisable(false);
+            selectSourceProjectsButton.setDisable(false);
+            selectDestProjectsButton.setDisable(false);
+            openH2ConsoleButton.setDisable(false);
+
+            // Setup task integration tab with test connections
+            setupTaskIntegrationTab();
+
+            // Set test mode flag
+            testModeEnabled = true;
+
+            // Create an information dialog
+            Platform.runLater(() -> {
+                Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                alert.setTitle("Test Mode Enabled");
+                alert.setHeaderText("Test Mode is Now Active");
+                alert.setContentText("Test mode has been enabled with sample databases.\n\nReturn to the 'Integration' tab to perform test integrations.");
+
+                // Customize button
+                ButtonType okButton = new ButtonType("Go to Integration Tab", ButtonBar.ButtonData.OK_DONE);
+                alert.getButtonTypes().setAll(okButton);
+
+                // Show the dialog
+                Optional<ButtonType> result = alert.showAndWait();
+
+                // If the user clicks the button, switch to the integration tab
+                if (result.isPresent() && result.get() == okButton) {
+                    // Assuming the TabPane is a child of the scene
+                    TabPane tabPane = (TabPane) testModeButton.getScene().lookup(".tab-pane");
+                    if (tabPane != null) {
+                        tabPane.getSelectionModel().select(0); // Select the first tab (Database Integration)
+                    }
+                }
+            });
+
+            logTextArea.appendText("Test mode successfully enabled\n");
+
+        } catch (Exception e) {
+            // Comprehensive error handling
+            logTextArea.appendText("Test mode setup failed: " + e.getMessage() + "\n");
+
+            // Log full stack trace
+            StringWriter sw = new StringWriter();
+            PrintWriter pw = new PrintWriter(sw);
+            e.printStackTrace(pw);
+            logTextArea.appendText("Full error details:\n" + sw.toString() + "\n");
+
+            showError("Test Mode Error", "Failed to set up test mode: " + e.getMessage());
         }
     }
 

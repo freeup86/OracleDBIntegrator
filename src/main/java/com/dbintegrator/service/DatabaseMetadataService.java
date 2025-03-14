@@ -3,11 +3,9 @@ package com.dbintegrator.service;
 import com.dbintegrator.model.Project;
 import com.dbintegrator.model.TableColumn;
 import com.dbintegrator.util.DatabaseConnectionManager;
+import com.dbintegrator.model.Task;
 
-import java.sql.Connection;
-import java.sql.DatabaseMetaData;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -181,5 +179,34 @@ public class DatabaseMetadataService {
         }
 
         return tablesWithColumns;
+    }
+
+    //methods to retrieve tasks:
+    public List<Task> getProjectTasks(int projectId) throws SQLException {
+        List<Task> tasks = new ArrayList<>();
+
+        String query = "SELECT id, name, description, status, assignee " +
+                "FROM tasks WHERE project_id = ?";
+
+        try (Connection conn = connectionManager.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+
+            stmt.setInt(1, projectId);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    tasks.add(new Task(
+                            rs.getInt("id"),
+                            rs.getString("name"),
+                            rs.getString("description"),
+                            projectId,
+                            rs.getString("status"),
+                            rs.getString("assignee")
+                    ));
+                }
+            }
+        }
+
+        return tasks;
     }
 }
