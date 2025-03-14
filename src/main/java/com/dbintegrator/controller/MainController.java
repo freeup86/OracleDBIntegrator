@@ -20,10 +20,9 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 
 import java.io.IOException;
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -58,6 +57,8 @@ public class MainController {
     private DatabaseMetadataService destMetadataService;
     private ObservableList<ColumnMapping> mappings = FXCollections.observableArrayList();
     private ConfigurationManager configManager;
+    private Connection sourceConn;
+    private Connection destConn;
 
     // Multi-project selection fields
     private List<Project> selectedSourceProjects = new ArrayList<>();
@@ -135,7 +136,17 @@ public class MainController {
 
     private void setupTestMode() {
         try {
+            // Test if H2 is working properly
+            boolean h2Working = TestDatabaseManager.testBasicH2Connection();
+            logTextArea.appendText("H2 test connection: " + (h2Working ? "SUCCESS" : "FAILED") + "\n");
+
+            if (!h2Working) {
+                logTextArea.appendText("H2 database not working properly. Cannot enable test mode.\n");
+                return;
+            }
+
             // Set up test connections
+            logTextArea.appendText("Setting up test connections...\n");
             sourceDbManager = TestDatabaseManager.getSourceTestConnection();
             destDbManager = TestDatabaseManager.getDestTestConnection();
 
@@ -162,14 +173,21 @@ public class MainController {
             testModeEnabled = true;
 
             logTextArea.appendText("Test mode enabled with sample databases\n");
-            logTextArea.appendText("Source Database has test PROJECTS table with sample data\n");
-            logTextArea.appendText("Destination Database has test PA_PROJECTS table with sample data\n");
 
-        } catch (SQLException e) {
+        } catch (Exception e) {
+            // Full error reporting
+            logTextArea.appendText("ERROR setting up test mode: " + e.getMessage() + "\n");
+
+            // Get detailed stack trace for diagnosis
+            StringWriter sw = new StringWriter();
+            PrintWriter pw = new PrintWriter(sw);
+            e.printStackTrace(pw);
+            logTextArea.appendText("Stack trace:\n" + sw.toString());
+
             showError("Test Setup Error", "Failed to set up test databases: " + e.getMessage());
-            e.printStackTrace();
         }
     }
+
 
     private void verifyIntegrationResults() {
         try {

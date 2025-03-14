@@ -26,8 +26,11 @@ public class DatabaseMetadataService {
      */
     private boolean isH2Database() {
         try (Connection conn = connectionManager.getConnection()) {
-            return conn.getMetaData().getDatabaseProductName().contains("H2");
+            String productName = conn.getMetaData().getDatabaseProductName();
+            System.out.println("Database product name: " + productName);
+            return productName != null && productName.contains("H2");
         } catch (SQLException e) {
+            e.printStackTrace();
             return false;
         }
     }
@@ -61,6 +64,7 @@ public class DatabaseMetadataService {
         }
 
         String schemaPattern = getSchemaName();
+        System.out.println("Getting tables for schema: " + schemaPattern);
 
         try (ResultSet tables = metaData.getTables(null, schemaPattern, null, new String[]{"TABLE"})) {
             while (tables.next()) {
@@ -80,6 +84,7 @@ public class DatabaseMetadataService {
                     continue;
                 }
 
+                // Use 0 as placeholder ID, name as the table name, and description as the schema
                 projects.add(new Project(0, tableName, schemaName));
             }
         }
@@ -118,10 +123,13 @@ public class DatabaseMetadataService {
         DatabaseMetaData metaData = connection.getMetaData();
 
         String schemaPattern = getSchemaName();
+        System.out.println("Getting table names for schema: " + schemaPattern);
 
         try (ResultSet tables = metaData.getTables(null, schemaPattern, null, new String[]{"TABLE"})) {
             while (tables.next()) {
-                tableNames.add(tables.getString("TABLE_NAME"));
+                String tableName = tables.getString("TABLE_NAME");
+                tableNames.add(tableName);
+                System.out.println("Found table: " + tableName);
             }
         }
 
@@ -135,11 +143,13 @@ public class DatabaseMetadataService {
      * @throws SQLException if database access error occurs
      */
     public List<TableColumn> getTableColumns(String tableName) throws SQLException {
+        System.out.println("Getting columns for table: " + tableName);
         List<TableColumn> columns = new ArrayList<>();
         Connection connection = connectionManager.getConnection();
         DatabaseMetaData metaData = connection.getMetaData();
 
         String schemaPattern = getSchemaName();
+        System.out.println("Using schema: " + schemaPattern);
 
         try (ResultSet columnsResultSet = metaData.getColumns(null, schemaPattern, tableName, null)) {
             while (columnsResultSet.next()) {
@@ -149,6 +159,7 @@ public class DatabaseMetadataService {
                 boolean nullable = columnsResultSet.getInt("NULLABLE") == DatabaseMetaData.columnNullable;
 
                 columns.add(new TableColumn(columnName, dataType, size, nullable));
+                System.out.println("Found column: " + columnName + " (" + dataType + ")");
             }
         }
 
