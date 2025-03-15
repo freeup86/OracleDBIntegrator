@@ -13,8 +13,8 @@ import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
-import javafx.fxml.FXMLLoader;
-import javafx.scene.Scene;
+import javafx.scene.Node;
+import javafx.scene.Parent;
 import javafx.scene.control.*;
 import javafx.scene.layout.VBox;
 import javafx.stage.Modality;
@@ -29,6 +29,10 @@ import java.util.List;
 import java.util.Optional;
 
 public class MainController {
+    // Constants for fixed table names
+    private static final String SOURCE_TABLE_NAME = "PROJECTS";
+    private static final String DEST_TABLE_NAME = "PA_PROJECTS";
+
     // Project Integration Tab Components
     @FXML private RadioButton sourceToDestRadio;
     @FXML private RadioButton destToSourceRadio;
@@ -37,8 +41,6 @@ public class MainController {
     @FXML private Label destDbLabel;
     @FXML private Button connectSourceButton;
     @FXML private Button connectDestButton;
-    @FXML private ComboBox<String> sourceTableComboBox;
-    @FXML private ComboBox<String> destTableComboBox;
     @FXML private ListView<TableColumn> sourceColumnsListView;
     @FXML private ListView<TableColumn> destColumnsListView;
     @FXML private ListView<ColumnMapping> mappingsListView;
@@ -55,6 +57,10 @@ public class MainController {
     @FXML private Button verifyResultsButton;
     @FXML private TextArea sourceProjectDetailsArea;
     @FXML private TextArea destProjectDetailsArea;
+
+    // Controllers for other tabs
+    @FXML private TaskIntegrationController taskIntegrationController;
+    @FXML private ResourceIntegrationController resourceIntegrationController;
 
     // Database and Project Management
     private DatabaseConnectionManager sourceDbManager;
@@ -79,62 +85,67 @@ public class MainController {
         setupMappingsList();
         tryAutoConnect();
 
-        // Ensure task integration is setup
+        // Ensure integration tabs are setup
         Platform.runLater(() -> {
             if (sourceDbManager != null && destDbManager != null) {
                 setupTaskIntegrationTab();
+                setupResourceIntegrationTab();
             }
         });
     }
 
-    private TaskIntegrationController findTaskIntegrationController() {
+    private void setupTaskIntegrationTab() {
         try {
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/dbintegrator/ui/task_integration.fxml"));
-            loader.load(); // This ensures the controller is created
-            return loader.getController();
-        } catch (IOException e) {
-            logTextArea.appendText("Error loading Task Integration Controller: " + e.getMessage() + "\n");
-            return null;
+            if (taskIntegrationController == null) {
+                System.err.println("TaskIntegrationController reference is null");
+                return;
+            }
+
+            // Set database managers
+            if (sourceDbManager != null) {
+                System.out.println("Setting source DB manager in Task Integration Tab");
+                taskIntegrationController.setSourceDbManager(sourceDbManager);
+            }
+
+            if (destDbManager != null) {
+                System.out.println("Setting destination DB manager in Task Integration Tab");
+                taskIntegrationController.setDestDbManager(destDbManager);
+            }
+
+            // Force reload of projects
+            taskIntegrationController.forceProjectLoading();
+
+        } catch (Exception e) {
+            System.err.println("Error in setupTaskIntegrationTab:");
+            e.printStackTrace();
         }
     }
 
-    private void setupTaskIntegrationTab() {
+    private void setupResourceIntegrationTab() {
         try {
-            System.out.println("Setting up Task Integration Tab");
-            System.out.println("Source DB Manager: " + (sourceDbManager != null));
-            System.out.println("Dest DB Manager: " + (destDbManager != null));
-
-            // Find the Task Integration controller
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/dbintegrator/ui/task_integration.fxml"));
-
-            try {
-                loader.load(); // This ensures the controller is created
-                TaskIntegrationController controller = loader.getController();
-
-                if (controller == null) {
-                    System.err.println("Could not find TaskIntegrationController");
-                    return;
-                }
-
-                // Force project loading
-                Platform.runLater(() -> {
-                    // Explicitly set database managers
-                    if (sourceDbManager != null) {
-                        System.out.println("Setting source DB manager in Task Integration Tab");
-                        controller.setSourceDbManager(sourceDbManager);
-                    }
-
-                    if (destDbManager != null) {
-                        System.out.println("Setting destination DB manager in Task Integration Tab");
-                        controller.setDestDbManager(destDbManager);
-                    }
-                });
-            } catch (IOException e) {
-                System.err.println("Error loading Task Integration FXML: " + e.getMessage());
-                e.printStackTrace();
+            if (resourceIntegrationController == null) {
+                System.err.println("ResourceIntegrationController reference is null");
+                return;
             }
+
+            System.out.println("Setting up Resource Integration Tab");
+
+            // Set database managers
+            if (sourceDbManager != null) {
+                System.out.println("Setting source DB manager in Resource Integration Tab");
+                resourceIntegrationController.setSourceDbManager(sourceDbManager);
+            }
+
+            if (destDbManager != null) {
+                System.out.println("Setting destination DB manager in Resource Integration Tab");
+                resourceIntegrationController.setDestDbManager(destDbManager);
+            }
+
+            // Force reload of resources
+            resourceIntegrationController.forceResourceLoading();
+
         } catch (Exception e) {
-            System.err.println("Error in setupTaskIntegrationTab:");
+            System.err.println("Error in setupResourceIntegrationTab:");
             e.printStackTrace();
         }
     }
@@ -180,10 +191,6 @@ public class MainController {
         connectSourceButton.setOnAction(event -> connectToDatabase(true));
         connectDestButton.setOnAction(event -> connectToDatabase(false));
 
-        // Table selection handlers
-        sourceTableComboBox.setOnAction(event -> loadTableColumns(true));
-        destTableComboBox.setOnAction(event -> loadTableColumns(false));
-
         // Project selection buttons
         selectSourceProjectsButton.setOnAction(event -> selectProjects(true));
         selectDestProjectsButton.setOnAction(event -> selectProjects(false));
@@ -208,8 +215,6 @@ public class MainController {
     }
 
     private void disableIntegrationControls() {
-        sourceTableComboBox.setDisable(true);
-        destTableComboBox.setDisable(true);
         selectSourceProjectsButton.setDisable(true);
         selectDestProjectsButton.setDisable(true);
         addMappingButton.setDisable(true);
@@ -227,11 +232,11 @@ public class MainController {
                 if (sourceDbManager != null) {
                     sourceDbLabel.setText("Source: " + sourceDbManager.getConnectionInfo());
                     sourceMetadataService = new DatabaseMetadataService(sourceDbManager);
-                    loadTables(true);
+                    loadTableColumns(true);
                     logTextArea.appendText("Connected to source database using saved credentials\n");
                     selectSourceProjectsButton.setDisable(false);
                 }
-            } catch (SQLException e) {
+            } catch (Exception e) {
                 logTextArea.appendText("Failed to connect to source with saved credentials: " + e.getMessage() + "\n");
             }
         }
@@ -243,28 +248,26 @@ public class MainController {
                 if (destDbManager != null) {
                     destDbLabel.setText("Destination: " + destDbManager.getConnectionInfo());
                     destMetadataService = new DatabaseMetadataService(destDbManager);
-                    loadTables(false);
+                    loadTableColumns(false);
                     logTextArea.appendText("Connected to destination database using saved credentials\n");
                     selectDestProjectsButton.setDisable(false);
                 }
-            } catch (SQLException e) {
+            } catch (Exception e) {
                 logTextArea.appendText("Failed to connect to destination with saved credentials: " + e.getMessage() + "\n");
             }
         }
 
-        // Enable table selections if both connections established
+        // Enable column selections if both connections established
         if (sourceDbManager != null && destDbManager != null) {
-            sourceTableComboBox.setDisable(false);
-            destTableComboBox.setDisable(false);
-
-            // Setup task integration
+            // Setup integration tabs
             setupTaskIntegrationTab();
+            setupResourceIntegrationTab();
         }
     }
 
     private void connectToDatabase(boolean isSource) {
         try {
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/dbintegrator/ui/database_connection.fxml"));
+            javafx.fxml.FXMLLoader loader = new javafx.fxml.FXMLLoader(getClass().getResource("/com/dbintegrator/ui/database_connection.fxml"));
             VBox root = loader.load();
             DatabaseConnectionController controller = loader.getController();
 
@@ -275,7 +278,7 @@ public class MainController {
             Stage dialog = new Stage();
             dialog.initModality(Modality.APPLICATION_MODAL);
             dialog.setTitle("Connect to " + (isSource ? "P6" : "EBS") + " Database");
-            dialog.setScene(new Scene(root));
+            dialog.setScene(new javafx.scene.Scene(root));
             dialog.showAndWait();
 
             if (controller.getConnectionManager() != null) {
@@ -283,68 +286,40 @@ public class MainController {
                     sourceDbManager = controller.getConnectionManager();
                     sourceDbLabel.setText("Source: " + sourceDbManager.getConnectionInfo());
                     sourceMetadataService = new DatabaseMetadataService(sourceDbManager);
-                    loadTables(true);
+                    loadTableColumns(true);
                     selectSourceProjectsButton.setDisable(false);
                 } else {
                     destDbManager = controller.getConnectionManager();
                     destDbLabel.setText("Destination: " + destDbManager.getConnectionInfo());
                     destMetadataService = new DatabaseMetadataService(destDbManager);
-                    loadTables(false);
+                    loadTableColumns(false);
                     selectDestProjectsButton.setDisable(false);
                 }
 
-                // Enable table selections when both connections are established
+                // Enable column selections when both connections are established
                 if (sourceDbManager != null && destDbManager != null) {
-                    sourceTableComboBox.setDisable(false);
-                    destTableComboBox.setDisable(false);
-
-                    // Setup task integration
+                    // Setup integration tabs
                     setupTaskIntegrationTab();
+                    setupResourceIntegrationTab();
                 }
             }
-
-            // Enable table selections when both connections are established
-            if (sourceDbManager != null && destDbManager != null) {
-                sourceTableComboBox.setDisable(false);
-                destTableComboBox.setDisable(false);
-
-                // Setup task integration
-                setupTaskIntegrationTab();
-            }
-        } catch (IOException | SQLException e) {
+        } catch (IOException e) {
             showError("Connection Error", e.getMessage());
-        }
-    }
-
-    private void loadTables(boolean isSource) throws SQLException {
-        DatabaseMetadataService metadataService = isSource ? sourceMetadataService : destMetadataService;
-        ComboBox<String> comboBox = isSource ? sourceTableComboBox : destTableComboBox;
-
-        List<String> tableNames = metadataService.getTableNames();
-        comboBox.setItems(FXCollections.observableArrayList(tableNames));
-
-        if (!tableNames.isEmpty()) {
-            comboBox.setValue(tableNames.get(0));
-            loadTableColumns(isSource);
         }
     }
 
     private void loadTableColumns(boolean isSource) {
         try {
-            String selectedTable = isSource ?
-                    sourceTableComboBox.getValue() : destTableComboBox.getValue();
+            String tableName = isSource ? SOURCE_TABLE_NAME : DEST_TABLE_NAME;
+            DatabaseMetadataService metadataService = isSource ? sourceMetadataService : destMetadataService;
+            ListView<TableColumn> listView = isSource ? sourceColumnsListView : destColumnsListView;
 
-            if (selectedTable != null) {
-                DatabaseMetadataService metadataService =
-                        isSource ? sourceMetadataService : destMetadataService;
-                ListView<TableColumn> listView =
-                        isSource ? sourceColumnsListView : destColumnsListView;
-
-                List<TableColumn> columns = metadataService.getTableColumns(selectedTable);
+            if (metadataService != null) {
+                List<TableColumn> columns = metadataService.getTableColumns(tableName);
                 listView.setItems(FXCollections.observableArrayList(columns));
 
-                // Enable add mapping when both tables selected
-                if (sourceTableComboBox.getValue() != null && destTableComboBox.getValue() != null) {
+                // Enable add mapping when both column lists populated
+                if (!sourceColumnsListView.getItems().isEmpty() && !destColumnsListView.getItems().isEmpty()) {
                     addMappingButton.setDisable(false);
                 }
             }
@@ -361,7 +336,7 @@ public class MainController {
             return;
         }
 
-        String tableName = isSource ? "PROJECTS" : "PA_PROJECTS";
+        String tableName = isSource ? SOURCE_TABLE_NAME : DEST_TABLE_NAME;
         MultiProjectSelectionDialog dialog = new MultiProjectSelectionDialog(dbManager, tableName, isSource);
 
         dialog.showAndWait().ifPresent(selectedProjects -> {
@@ -414,10 +389,7 @@ public class MainController {
         TableColumn destColumn = destColumnsListView.getSelectionModel().getSelectedItem();
 
         if (sourceColumn != null && destColumn != null) {
-            String sourceTable = sourceTableComboBox.getValue();
-            String destTable = destTableComboBox.getValue();
-
-            ColumnMapping mapping = new ColumnMapping(sourceTable, sourceColumn, destTable, destColumn);
+            ColumnMapping mapping = new ColumnMapping(SOURCE_TABLE_NAME, sourceColumn, DEST_TABLE_NAME, destColumn);
             mappings.add(mapping);
 
             // Enable integration execution and remove mapping
@@ -474,19 +446,18 @@ public class MainController {
             sourceMetadataService = new DatabaseMetadataService(sourceDbManager);
             destMetadataService = new DatabaseMetadataService(destDbManager);
 
-            // Load tables and enable controls
-            loadTables(true);
-            loadTables(false);
+            // Load columns
+            loadTableColumns(true);
+            loadTableColumns(false);
 
             // Enable test mode specific controls
-            sourceTableComboBox.setDisable(false);
-            destTableComboBox.setDisable(false);
             selectSourceProjectsButton.setDisable(false);
             selectDestProjectsButton.setDisable(false);
             openH2ConsoleButton.setDisable(false);
 
-            // Setup task integration tab with test connections
+            // Setup integration tabs with test connections
             setupTaskIntegrationTab();
+            setupResourceIntegrationTab();
 
             // Set test mode flag
             testModeEnabled = true;
@@ -619,9 +590,9 @@ public class MainController {
 
             try (Connection conn = destDbManager.getConnection();
                  Statement stmt = conn.createStatement();
-                 ResultSet rs = stmt.executeQuery("SELECT id, name, description FROM PA_PROJECTS")) {
+                 ResultSet rs = stmt.executeQuery("SELECT id, name, description FROM " + DEST_TABLE_NAME)) {
 
-                logTextArea.appendText("Integration Results (PA_PROJECTS table):\n");
+                logTextArea.appendText("Integration Results (" + DEST_TABLE_NAME + " table):\n");
                 logTextArea.appendText("------------------------------------------\n");
                 while (rs.next()) {
                     logTextArea.appendText(rs.getInt("id") + ": " +

@@ -1,15 +1,18 @@
 package com.dbintegrator.controller;
 
+import com.dbintegrator.model.ColumnMapping;
 import com.dbintegrator.model.Project;
-import com.dbintegrator.model.Task;
-import com.dbintegrator.model.TaskMapping;
+import com.dbintegrator.model.TableColumn;
+import com.dbintegrator.service.DatabaseMetadataService;
+import com.dbintegrator.service.DataIntegrationService;
+import com.dbintegrator.ui.MultiProjectSelectionDialog;
+import com.dbintegrator.ui.ProjectSelectionDialog;
 import com.dbintegrator.util.DatabaseConnectionManager;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
-import javafx.util.StringConverter;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -17,17 +20,19 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.util.Optional;
 
 public class TaskIntegrationController {
-    private static final Logger LOGGER = Logger.getLogger(TaskIntegrationController.class.getName());
 
-    @FXML private ComboBox<Project> sourceProjectComboBox;
-    @FXML private ComboBox<Project> destProjectComboBox;
-    @FXML private ListView<Task> sourceTasksListView;
-    @FXML private ListView<Task> destTasksListView;
-    @FXML private ListView<TaskMapping> taskMappingsListView;
+    @FXML private Button selectSourceProjectButton;
+    @FXML private Button selectDestProjectButton;
+    @FXML private Label sourceProjectLabel;
+    @FXML private Label destProjectLabel;
+    @FXML private ComboBox<String> sourceTaskTableComboBox;
+    @FXML private ComboBox<String> destTaskTableComboBox;
+    @FXML private ListView<TableColumn> sourceColumnsListView;
+    @FXML private ListView<TableColumn> destColumnsListView;
+    @FXML private ListView<ColumnMapping> taskMappingsListView;
     @FXML private Button addTaskMappingButton;
     @FXML private Button removeTaskMappingButton;
     @FXML private Button executeTaskIntegrationButton;
@@ -35,46 +40,34 @@ public class TaskIntegrationController {
 
     private DatabaseConnectionManager sourceDbManager;
     private DatabaseConnectionManager destDbManager;
+    private DatabaseMetadataService sourceMetadataService;
+    private DatabaseMetadataService destMetadataService;
 
-    private ObservableList<Task> sourceTasksList = FXCollections.observableArrayList();
-    private ObservableList<Task> destTasksList = FXCollections.observableArrayList();
-    private ObservableList<TaskMapping> taskMappings = FXCollections.observableArrayList();
+    private Project selectedSourceProject;
+    private Project selectedDestProject;
+    private ObservableList<ColumnMapping> taskMappings = FXCollections.observableArrayList();
 
     @FXML
     public void initialize() {
         System.out.println("TaskIntegrationController - INITIALIZE METHOD CALLED");
-        System.out.println("Source Project ComboBox: " + (sourceProjectComboBox != null));
-        System.out.println("Destination Project ComboBox: " + (destProjectComboBox != null));
-
-        // Force ComboBox configuration
-        Platform.runLater(() -> {
-            if (sourceProjectComboBox != null) {
-                sourceProjectComboBox.setVisibleRowCount(10);
-                sourceProjectComboBox.setPromptText("Select P6 Project");
-            }
-
-            if (destProjectComboBox != null) {
-                destProjectComboBox.setVisibleRowCount(10);
-                destProjectComboBox.setPromptText("Select EBS Project");
-            }
-        });
 
         // Initialize UI components
         initializeUIComponents();
+        setupEventHandlers();
     }
 
     private void initializeUIComponents() {
-        // Null-safe initialization with extensive logging
-        if (sourceTasksListView != null) {
-            sourceTasksListView.setItems(sourceTasksList);
+        // Configure ListViews
+        if (sourceColumnsListView != null) {
+            sourceColumnsListView.setItems(FXCollections.observableArrayList());
         } else {
-            System.err.println("sourceTasksListView is NULL");
+            System.err.println("sourceColumnsListView is NULL");
         }
 
-        if (destTasksListView != null) {
-            destTasksListView.setItems(destTasksList);
+        if (destColumnsListView != null) {
+            destColumnsListView.setItems(FXCollections.observableArrayList());
         } else {
-            System.err.println("destTasksListView is NULL");
+            System.err.println("destColumnsListView is NULL");
         }
 
         if (taskMappingsListView != null) {
@@ -83,260 +76,136 @@ public class TaskIntegrationController {
             System.err.println("taskMappingsListView is NULL");
         }
 
-        // Configure ComboBox cell factories
-        configureComboBoxCellFactories();
-
-        // Setup project combo box listeners
-        setupProjectComboBoxListeners();
-    }
-
-    private void configureComboBoxCellFactories() {
-        if (sourceProjectComboBox != null) {
-            sourceProjectComboBox.setCellFactory(param -> new ListCell<Project>() {
-                @Override
-                protected void updateItem(Project item, boolean empty) {
-                    super.updateItem(item, empty);
-                    setText(item == null ? "" : item.getName());
-                }
-            });
-            sourceProjectComboBox.setVisibleRowCount(5);
+        // Initialize labels
+        if (sourceProjectLabel != null) {
+            sourceProjectLabel.setText("No P6 project selected");
         }
 
-        if (destProjectComboBox != null) {
-            destProjectComboBox.setCellFactory(param -> new ListCell<Project>() {
-                @Override
-                protected void updateItem(Project item, boolean empty) {
-                    super.updateItem(item, empty);
-                    setText(item == null ? "" : item.getName());
+        if (destProjectLabel != null) {
+            destProjectLabel.setText("No EBS project selected");
+        }
+
+        // Configure Task Table selection handlers
+        if (sourceTaskTableComboBox != null) {
+            sourceTaskTableComboBox.setOnAction(event -> {
+                String selectedTable = sourceTaskTableComboBox.getValue();
+                if (selectedTable != null) {
+                    loadTableColumns(true, selectedTable);
                 }
             });
-            destProjectComboBox.setVisibleRowCount(5);
+        }
+
+        if (destTaskTableComboBox != null) {
+            destTaskTableComboBox.setOnAction(event -> {
+                String selectedTable = destTaskTableComboBox.getValue();
+                if (selectedTable != null) {
+                    loadTableColumns(false, selectedTable);
+                }
+            });
         }
     }
 
-    private void setupProjectComboBoxListeners() {
-        if (sourceProjectComboBox != null) {
-            sourceProjectComboBox.setOnAction(event -> {
-                Project selectedProject = sourceProjectComboBox.getValue();
-                System.out.println("Source Project Selected: " + (selectedProject != null ? selectedProject.getName() : "NULL"));
-                if (selectedProject != null) {
-                    loadSourceTasks(selectedProject);
-                }
-            });
-        } else {
-            System.err.println("sourceProjectComboBox is NULL - cannot set listener");
+    private void setupEventHandlers() {
+        if (selectSourceProjectButton != null) {
+            selectSourceProjectButton.setOnAction(event -> selectProject(true));
         }
 
-        if (destProjectComboBox != null) {
-            destProjectComboBox.setOnAction(event -> {
-                Project selectedProject = destProjectComboBox.getValue();
-                System.out.println("Destination Project Selected: " + (selectedProject != null ? selectedProject.getName() : "NULL"));
-                if (selectedProject != null) {
-                    loadDestinationTasks(selectedProject);
-                }
-            });
-        } else {
-            System.err.println("destProjectComboBox is NULL - cannot set listener");
+        if (selectDestProjectButton != null) {
+            selectDestProjectButton.setOnAction(event -> selectProject(false));
+        }
+
+        if (addTaskMappingButton != null) {
+            addTaskMappingButton.setOnAction(event -> addTaskMapping());
+            addTaskMappingButton.setDisable(true);
+        }
+
+        if (removeTaskMappingButton != null) {
+            removeTaskMappingButton.setOnAction(event -> removeTaskMapping());
+            removeTaskMappingButton.setDisable(true);
+        }
+
+        if (executeTaskIntegrationButton != null) {
+            executeTaskIntegrationButton.setOnAction(event -> executeTaskIntegration());
+            executeTaskIntegrationButton.setDisable(true);
         }
     }
 
     public void setSourceDbManager(DatabaseConnectionManager sourceDbManager) {
         System.out.println("setSourceDbManager CALLED");
-        System.out.println("Source DB Manager: " + (sourceDbManager != null));
         this.sourceDbManager = sourceDbManager;
+        if (sourceDbManager != null) {
+            this.sourceMetadataService = new DatabaseMetadataService(sourceDbManager);
+            loadTaskTables(true);
 
-        // Force project loading on JavaFX Application Thread with additional logging
-        Platform.runLater(() -> {
-            System.out.println("Platform.runLater - Loading Source Projects");
-            loadSourceProjects();
-        });
+            // Enable source project selection button
+            if (selectSourceProjectButton != null) {
+                selectSourceProjectButton.setDisable(false);
+            }
+        }
     }
 
     public void setDestDbManager(DatabaseConnectionManager destDbManager) {
         System.out.println("setDestDbManager CALLED");
-        System.out.println("Destination DB Manager: " + (destDbManager != null));
         this.destDbManager = destDbManager;
+        if (destDbManager != null) {
+            this.destMetadataService = new DatabaseMetadataService(destDbManager);
+            loadTaskTables(false);
 
-        // Force project loading on JavaFX Application Thread with additional logging
-        Platform.runLater(() -> {
-            System.out.println("Platform.runLater - Loading Destination Projects");
-            loadDestinationProjects();
-        });
+            // Enable destination project selection button
+            if (selectDestProjectButton != null) {
+                selectDestProjectButton.setDisable(false);
+            }
+        }
     }
 
-    private void loadSourceProjects() {
-        System.out.println("loadSourceProjects CALLED");
-        System.out.println("Source DB Manager: " + (sourceDbManager != null));
-        System.out.println("Source Project ComboBox: " + (sourceProjectComboBox != null));
-
-        if (sourceDbManager == null || sourceProjectComboBox == null) {
-            System.err.println("Cannot load source projects - manager or combobox is null");
+    private void selectProject(boolean isSource) {
+        DatabaseConnectionManager dbManager = isSource ? sourceDbManager : destDbManager;
+        if (dbManager == null) {
+            showError("Connection Required",
+                    "Please connect to " + (isSource ? "source" : "destination") + " database first.");
             return;
         }
 
-        try {
-            List<Project> sourceProjects = getProjects(sourceDbManager, "PROJECTS");
+        String tableName = isSource ? "PROJECTS" : "PA_PROJECTS";
 
-            System.out.println("Source Projects Found: " + sourceProjects.size());
-            for (Project p : sourceProjects) {
-                System.out.println("Source Project: " + p);
-            }
+        // Use ProjectSelectionDialog instead of MultiProjectSelectionDialog
+        ProjectSelectionDialog dialog = new ProjectSelectionDialog(dbManager, tableName, isSource);
 
-            Platform.runLater(() -> {
-                try {
-                    System.out.println("Setting source project ComboBox items");
+        Optional<Integer> result = dialog.showAndWait();
+        if (result.isPresent() && result.get() > 0) {
+            int projectId = result.get();
 
-                    // Clear and repopulate
-                    sourceProjectComboBox.getItems().clear();
-                    sourceProjectComboBox.getItems().addAll(sourceProjects);
+            // Get full project details from the database
+            try {
+                Project selectedProject = getProjectById(dbManager, tableName, projectId);
 
-                    // Force UI updates
-                    sourceProjectComboBox.requestLayout();
-                    sourceProjectComboBox.layout();
-
-                    // Explicitly show dropdown
-                    sourceProjectComboBox.show();
-
-                    // Set custom cell factory again
-                    sourceProjectComboBox.setCellFactory(param -> new ListCell<Project>() {
-                        @Override
-                        protected void updateItem(Project item, boolean empty) {
-                            super.updateItem(item, empty);
-                            setText(item == null ? "" : item.getName());
-                        }
-                    });
-
-                    // Explicitly set converter
-                    sourceProjectComboBox.setConverter(new StringConverter<Project>() {
-                        @Override
-                        public String toString(Project project) {
-                            return project == null ? "" : project.getName();
-                        }
-
-                        @Override
-                        public Project fromString(String string) {
-                            return null; // Not needed for this use case
-                        }
-                    });
-
-                    // Ensure first item is selected if available
-                    if (!sourceProjects.isEmpty()) {
-                        sourceProjectComboBox.setValue(sourceProjects.get(0));
+                if (selectedProject != null) {
+                    if (isSource) {
+                        this.selectedSourceProject = selectedProject;
+                        updateProjectLabel(true);
+                    } else {
+                        this.selectedDestProject = selectedProject;
+                        updateProjectLabel(false);
                     }
 
-                    // Log items in combobox
-                    System.out.println("Source ComboBox Items: " + sourceProjectComboBox.getItems());
-                    System.out.println("Source ComboBox Visible Items: " + sourceProjectComboBox.getVisibleRowCount());
-                } catch (Exception e) {
-                    System.err.println("Error in Platform.runLater for source projects:");
-                    e.printStackTrace();
+                    // Log selection
+                    if (logTextArea != null) {
+                        logTextArea.appendText("Selected " + (isSource ? "source" : "destination") +
+                                " project: " + selectedProject.getName() +
+                                " (ID: " + selectedProject.getId() + ")\n");
+                    }
+
+                    // Enable execute button when both source and destination projects are selected and mappings exist
+                    checkExecuteButtonStatus();
                 }
-            });
-        } catch (SQLException e) {
-            System.err.println("Error loading source projects:");
-            e.printStackTrace();
-        }
-    }
-
-// Do the same for loadDestinationProjects()
-
-    private void loadDestinationProjects() {
-        System.out.println("loadDestinationProjects CALLED");
-        System.out.println("Destination DB Manager: " + (destDbManager != null));
-        System.out.println("Destination Project ComboBox: " + (destProjectComboBox != null));
-
-        if (destDbManager == null || destProjectComboBox == null) {
-            System.err.println("Cannot load destination projects - manager or combobox is null");
-            return;
-        }
-
-        try {
-            List<Project> destProjects = getProjects(destDbManager, "PA_PROJECTS");
-
-            System.out.println("Destination Projects Found: " + destProjects.size());
-            for (Project p : destProjects) {
-                System.out.println("Destination Project: " + p);
-            }
-
-            Platform.runLater(() -> {
-                System.out.println("Setting destination project ComboBox items");
-                destProjectComboBox.getItems().clear();
-                destProjectComboBox.getItems().addAll(destProjects);
-
-                // Force dropdown to show
-                destProjectComboBox.show();
-
-                // Explicitly set the first item if available
-                if (!destProjects.isEmpty()) {
-                    destProjectComboBox.setValue(destProjects.get(0));
-                }
-
-                // Log items in combobox
-                System.out.println("Destination ComboBox Items: " + destProjectComboBox.getItems());
-            });
-        } catch (SQLException e) {
-            System.err.println("Error loading destination projects:");
-            e.printStackTrace();
-        }
-    }
-
-    // Remaining methods stay the same as in previous implementations...
-    // (getProjects, loadSourceTasks, loadDestinationTasks, etc.)
-
-    private List<Project> getProjects(DatabaseConnectionManager dbManager,
-                                      String tableName) throws SQLException {
-        List<Project> projects = new ArrayList<>();
-
-        String query = "SELECT id, name, description FROM " + tableName;
-
-        try (Connection conn = dbManager.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(query);
-             ResultSet rs = stmt.executeQuery()) {
-
-            while (rs.next()) {
-                Project project = new Project(
-                        rs.getInt("id"),
-                        rs.getString("name"),
-                        rs.getString("description")
-                );
-                projects.add(project);
+            } catch (SQLException e) {
+                showError("Database Error", "Failed to retrieve project details: " + e.getMessage());
             }
         }
-
-        return projects;
     }
 
-    private void loadSourceTasks(Project project) {
-        try {
-            List<Task> tasks = getProjectTasks(sourceDbManager, project.getId(), "TASKS");
-            Platform.runLater(() -> {
-                sourceTasksList.setAll(tasks);
-                checkMappingAvailability();
-            });
-        } catch (SQLException e) {
-            showError("Source Tasks Error", "Failed to load source tasks: " + e.getMessage());
-        }
-    }
-
-    private void loadDestinationTasks(Project project) {
-        try {
-            List<Task> tasks = getProjectTasks(destDbManager, project.getId(), "PA_TASKS");
-            Platform.runLater(() -> {
-                destTasksList.setAll(tasks);
-                checkMappingAvailability();
-            });
-        } catch (SQLException e) {
-            showError("Destination Tasks Error", "Failed to load destination tasks: " + e.getMessage());
-        }
-    }
-
-    private List<Task> getProjectTasks(DatabaseConnectionManager dbManager,
-                                       int projectId,
-                                       String tableName) throws SQLException {
-        List<Task> tasks = new ArrayList<>();
-
-        String query = "SELECT id, name, description, status, assignee " +
-                "FROM " + tableName + " WHERE project_id = ?";
+    private Project getProjectById(DatabaseConnectionManager dbManager, String tableName, int projectId) throws SQLException {
+        String query = "SELECT id, name, description FROM " + tableName + " WHERE id = ?";
 
         try (Connection conn = dbManager.getConnection();
              PreparedStatement stmt = conn.prepareStatement(query)) {
@@ -344,124 +213,235 @@ public class TaskIntegrationController {
             stmt.setInt(1, projectId);
 
             try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    tasks.add(new Task(
+                if (rs.next()) {
+                    return new Project(
                             rs.getInt("id"),
                             rs.getString("name"),
-                            rs.getString("description"),
-                            projectId,
-                            rs.getString("status"),
-                            rs.getString("assignee")
-                    ));
+                            rs.getString("description")
+                    );
                 }
             }
         }
 
-        return tasks;
+        return null;
     }
 
-    private void checkMappingAvailability() {
-        boolean canMap = sourceProjectComboBox.getValue() != null &&
-                destProjectComboBox.getValue() != null &&
-                !sourceTasksList.isEmpty() &&
-                !destTasksList.isEmpty();
+    private void updateProjectLabel(boolean isSource) {
+        Project project = isSource ? selectedSourceProject : selectedDestProject;
+        Label label = isSource ? sourceProjectLabel : destProjectLabel;
 
-        Platform.runLater(() -> {
-            addTaskMappingButton.setDisable(!canMap);
-        });
-    }
-
-    private void setupMappingButtons() {
-        addTaskMappingButton.setOnAction(event -> addTaskMapping());
-        removeTaskMappingButton.setOnAction(event -> removeTaskMapping());
-        executeTaskIntegrationButton.setOnAction(event -> executeTaskIntegration());
-    }
-
-    private void addTaskMapping() {
-        Task sourceTask = sourceTasksListView.getSelectionModel().getSelectedItem();
-        Task destTask = destTasksListView.getSelectionModel().getSelectedItem();
-
-        if (sourceTask != null && destTask != null) {
-            TaskMapping mapping = new TaskMapping(sourceTask, destTask);
-
-            // Prevent duplicate mappings
-            if (!taskMappings.contains(mapping)) {
-                taskMappings.add(mapping);
-                removeTaskMappingButton.setDisable(false);
-                executeTaskIntegrationButton.setDisable(false);
-            } else {
-                showError("Mapping Error", "This task mapping already exists.");
-            }
+        if (project == null) {
+            label.setText("No " + (isSource ? "P6" : "EBS") + " project selected");
         } else {
-            showError("Mapping Error", "Please select both source and destination tasks.");
+            label.setText((isSource ? "P6" : "EBS") + " Project: " +
+                    project.getName() + " (ID: " + project.getId() + ")");
         }
     }
 
+    private void loadTaskTables(boolean isSource) {
+        if ((isSource && sourceDbManager == null) || (!isSource && destDbManager == null)) {
+            System.err.println("Cannot load task tables - database manager is null");
+            return;
+        }
+
+        try {
+            DatabaseMetadataService metadataService = isSource ? sourceMetadataService : destMetadataService;
+            ComboBox<String> comboBox = isSource ? sourceTaskTableComboBox : destTaskTableComboBox;
+
+            if (metadataService == null || comboBox == null) {
+                System.err.println("Cannot load task tables - service or combobox is null");
+                return;
+            }
+
+            List<String> tableNames = metadataService.getTableNames();
+
+            // Filter for task-related tables
+            List<String> taskTables = new ArrayList<>();
+            for (String tableName : tableNames) {
+                if (tableName.toUpperCase().contains("TASK") ||
+                        tableName.toUpperCase().contains("ACTIVITY")) {
+                    taskTables.add(tableName);
+                }
+            }
+
+            System.out.println((isSource ? "Source" : "Destination") + " Task Tables: " + taskTables.size());
+
+            Platform.runLater(() -> {
+                comboBox.getItems().clear();
+                comboBox.getItems().addAll(taskTables);
+
+                if (!taskTables.isEmpty()) {
+                    comboBox.setValue(taskTables.get(0));
+                }
+            });
+        } catch (SQLException e) {
+            System.err.println("Error loading task tables: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private void loadTableColumns(boolean isSource, String tableName) {
+        try {
+            DatabaseMetadataService metadataService = isSource ? sourceMetadataService : destMetadataService;
+            ListView<TableColumn> listView = isSource ? sourceColumnsListView : destColumnsListView;
+
+            if (metadataService == null || listView == null) {
+                System.err.println("Cannot load columns - metadata service or list view is null");
+                return;
+            }
+
+            List<TableColumn> columns = metadataService.getTableColumns(tableName);
+
+            System.out.println("Loaded " + columns.size() + " columns for " +
+                    (isSource ? "source" : "destination") + " table " + tableName);
+
+            Platform.runLater(() -> {
+                listView.setItems(FXCollections.observableArrayList(columns));
+                checkMappingAvailability();
+            });
+        } catch (SQLException e) {
+            System.err.println("Error loading table columns: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private void checkMappingAvailability() {
+        boolean canMap = sourceTaskTableComboBox != null && sourceTaskTableComboBox.getValue() != null &&
+                destTaskTableComboBox != null && destTaskTableComboBox.getValue() != null &&
+                !sourceColumnsListView.getItems().isEmpty() &&
+                !destColumnsListView.getItems().isEmpty();
+
+        Platform.runLater(() -> {
+            if (addTaskMappingButton != null) {
+                addTaskMappingButton.setDisable(!canMap);
+            }
+        });
+    }
+
+    private void checkExecuteButtonStatus() {
+        boolean canExecute = selectedSourceProject != null &&
+                selectedDestProject != null &&
+                !taskMappings.isEmpty();
+
+        Platform.runLater(() -> {
+            if (executeTaskIntegrationButton != null) {
+                executeTaskIntegrationButton.setDisable(!canExecute);
+            }
+        });
+    }
+
+    // Update the addTaskMapping method to only log to the main logTextArea
+    private void addTaskMapping() {
+        TableColumn sourceColumn = sourceColumnsListView.getSelectionModel().getSelectedItem();
+        TableColumn destColumn = destColumnsListView.getSelectionModel().getSelectedItem();
+
+        if (sourceColumn != null && destColumn != null) {
+            String sourceTable = sourceTaskTableComboBox.getValue();
+            String destTable = destTaskTableComboBox.getValue();
+
+            ColumnMapping mapping = new ColumnMapping(sourceTable, sourceColumn, destTable, destColumn);
+
+            // Prevent duplicate mappings
+            boolean isDuplicate = false;
+            for (ColumnMapping existingMapping : taskMappings) {
+                if (existingMapping.getSourceTable().equals(mapping.getSourceTable()) &&
+                        existingMapping.getSourceColumn().getName().equals(mapping.getSourceColumn().getName()) &&
+                        existingMapping.getDestinationTable().equals(mapping.getDestinationTable()) &&
+                        existingMapping.getDestinationColumn().getName().equals(mapping.getDestinationColumn().getName())) {
+                    isDuplicate = true;
+                    break;
+                }
+            }
+
+            if (!isDuplicate) {
+                taskMappings.add(mapping);
+
+                if (removeTaskMappingButton != null) {
+                    removeTaskMappingButton.setDisable(false);
+                }
+
+                // Check if execute button should be enabled
+                checkExecuteButtonStatus();
+
+                // Only log to the main logTextArea
+                if (logTextArea != null) {
+                    logTextArea.appendText("Added mapping: " + sourceColumn.getName() +
+                            " → " + destColumn.getName() + "\n");
+                }
+            } else {
+                showError("Mapping Error", "This column mapping already exists.");
+            }
+        } else {
+            showError("Mapping Error", "Please select both source and destination columns.");
+        }
+    }
+
+    // Similar update for removeTaskMapping
     private void removeTaskMapping() {
-        TaskMapping selectedMapping = taskMappingsListView.getSelectionModel().getSelectedItem();
+        ColumnMapping selectedMapping = taskMappingsListView.getSelectionModel().getSelectedItem();
         if (selectedMapping != null) {
             taskMappings.remove(selectedMapping);
 
+            // Only log to the main logTextArea
+            if (logTextArea != null) {
+                logTextArea.appendText("Removed mapping: " + selectedMapping + "\n");
+            }
+
             if (taskMappings.isEmpty()) {
-                removeTaskMappingButton.setDisable(true);
-                executeTaskIntegrationButton.setDisable(true);
+                if (removeTaskMappingButton != null) {
+                    removeTaskMappingButton.setDisable(true);
+                }
+
+                // Check if execute button should be disabled
+                checkExecuteButtonStatus();
             }
         }
     }
 
     private void executeTaskIntegration() {
         if (taskMappings.isEmpty()) {
-            showError("Integration Error", "No task mappings defined.");
+            showError("Integration Error", "No column mappings defined.");
+            return;
+        }
+
+        if (selectedSourceProject == null || selectedDestProject == null) {
+            showError("Project Selection Required", "Please select both source and destination projects.");
             return;
         }
 
         try {
-            int totalTasksUpdated = 0;
+            // Create WHERE clauses for source and destination projects
+            String sourceWhereClause = "project_id = " + selectedSourceProject.getId();
+            String destWhereClause = "project_id = " + selectedDestProject.getId();
 
-            for (TaskMapping mapping : taskMappings) {
-                int rowsUpdated = updateTask(mapping);
-                totalTasksUpdated += rowsUpdated;
+            // Create integration service
+            DataIntegrationService integrationService = new DataIntegrationService(sourceDbManager, destDbManager);
+
+            // Perform integration
+            int rowsUpdated = integrationService.integrateData(taskMappings, sourceWhereClause, destWhereClause);
+
+            if (logTextArea != null) {
+                logTextArea.appendText("Task integration completed successfully.\n");
+                logTextArea.appendText("Updated " + rowsUpdated + " rows for project " +
+                        selectedDestProject.getName() + " (ID: " + selectedDestProject.getId() + ")\n");
             }
-
-            // Refresh tasks after integration
-            Project sourceProject = sourceProjectComboBox.getValue();
-            Project destProject = destProjectComboBox.getValue();
-
-            if (sourceProject != null) loadSourceTasks(sourceProject);
-            if (destProject != null) loadDestinationTasks(destProject);
 
         } catch (SQLException e) {
             showError("Integration Error", e.getMessage());
-        }
-    }
-
-    private int updateTask(TaskMapping mapping) throws SQLException {
-        String updateQuery = "UPDATE PA_TASKS SET " +
-                "name = ?, description = ?, status = ?, assignee = ? " +
-                "WHERE id = ?";
-
-        try (Connection conn = destDbManager.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(updateQuery)) {
-
-            Task sourceTask = mapping.getSourceTask();
-            Task destTask = mapping.getDestTask();
-
-            stmt.setString(1, sourceTask.getName());
-            stmt.setString(2, sourceTask.getDescription());
-            stmt.setString(3, sourceTask.getStatus());
-            stmt.setString(4, sourceTask.getAssignee());
-            stmt.setInt(5, destTask.getId());
-
-            return stmt.executeUpdate();
+            if (logTextArea != null) {
+                logTextArea.appendText("Integration failed: " + e.getMessage() + "\n");
+            }
         }
     }
 
     public void forceProjectLoading() {
+        // This method is kept for backward compatibility
+        // Now it doesn't do anything with projects since we're using the dialog
         if (sourceDbManager != null) {
-            loadSourceProjects();
+            loadTaskTables(true);
         }
         if (destDbManager != null) {
-            loadDestinationProjects();
+            loadTaskTables(false);
         }
     }
 

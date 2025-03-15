@@ -3,6 +3,8 @@ package com.dbintegrator.ui;
 import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
 import javafx.scene.control.*;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.VBox;
 
@@ -59,6 +61,17 @@ public class ProjectSelectionDialog extends Dialog<Integer> {
                     selectedProjectId = Integer.parseInt(idPart);
                 } catch (Exception ex) {
                     selectedProjectId = -1;
+                }
+            }
+        });
+
+        // Add double-click handler
+        projectsListView.setOnMouseClicked(event -> {
+            if (event.getButton() == MouseButton.PRIMARY && event.getClickCount() == 2) {
+                if (selectedProjectId > 0) {
+                    // Close the dialog with the selected project ID
+                    setResult(selectedProjectId);
+                    close();
                 }
             }
         });

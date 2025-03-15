@@ -23,7 +23,7 @@ public class MultiProjectSelectionDialog extends Dialog<List<Project>> {
     private final ListView<Project> projectsListView;
     private final TextField projectIdField;
     private final TextField nameSearchField;
-    private final List<Project> selectedProjects = new ArrayList<>();
+    private boolean singleSelectionMode = false;
 
     public MultiProjectSelectionDialog(DatabaseConnectionManager dbManager, String tableName, boolean isSource) {
         this.dbManager = dbManager;
@@ -67,10 +67,25 @@ public class MultiProjectSelectionDialog extends Dialog<List<Project>> {
         });
         searchPane.add(clearSearchButton, 3, 0, 1, 2);
 
-        // Projects list - enable multiple selection
+        // Projects list - enable multiple selection by default
         projectsListView = new ListView<>();
         projectsListView.setPrefHeight(300);
         projectsListView.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+
+        // Custom cell factory to display ID with name
+        projectsListView.setCellFactory(lv -> new ListCell<Project>() {
+            @Override
+            protected void updateItem(Project project, boolean empty) {
+                super.updateItem(project, empty);
+                if (empty || project == null) {
+                    setText(null);
+                } else {
+                    setText(project.getName() + " (ID: " + project.getId() + ")");
+                }
+            }
+        });
+
+        // Removed double-click handler
 
         // Selection controls
         HBox selectionControls = new HBox(10);
@@ -90,7 +105,7 @@ public class MultiProjectSelectionDialog extends Dialog<List<Project>> {
         // Update selection count when selection changes
         projectsListView.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             int count = projectsListView.getSelectionModel().getSelectedItems().size();
-            selectionCountLabel.setText(count + " projects selected");
+            selectionCountLabel.setText(count + " project" + (count != 1 ? "s" : "") + " selected");
         });
 
         // Add components to content
@@ -115,6 +130,15 @@ public class MultiProjectSelectionDialog extends Dialog<List<Project>> {
             }
             return null;
         });
+    }
+
+    public void setSingleSelectionMode(boolean singleSelectionMode) {
+        this.singleSelectionMode = singleSelectionMode;
+        if (singleSelectionMode) {
+            projectsListView.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
+        } else {
+            projectsListView.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        }
     }
 
     private void loadProjects() {

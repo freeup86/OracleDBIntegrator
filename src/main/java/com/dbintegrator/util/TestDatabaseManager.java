@@ -18,7 +18,18 @@ public class TestDatabaseManager {
             setupSourceTestData(conn);
 
             // Debug print
+            System.out.println("===== SOURCE TEST DATABASE TABLES =====");
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery("SHOW TABLES")) {
+                while (rs.next()) {
+                    System.out.println("Table: " + rs.getString(1));
+                }
+            } catch (Exception e) {
+                System.err.println("Error listing tables: " + e.getMessage());
+            }
+
             printProjectTableContents(connectionManager, "PROJECTS");
+            printResourceTableContents(connectionManager, "RSRC");
         } catch (SQLException e) {
             throw new SQLException("Failed to set up source test database", e);
         }
@@ -36,6 +47,7 @@ public class TestDatabaseManager {
 
             // Debug print
             printProjectTableContents(connectionManager, "PA_PROJECTS");
+            printResourceTableContents(connectionManager, "HR_ALL_PEOPLE");
         } catch (SQLException e) {
             throw new SQLException("Failed to set up destination test database", e);
         }
@@ -47,6 +59,7 @@ public class TestDatabaseManager {
         try (Statement stmt = conn.createStatement()) {
             // Drop existing tables to avoid conflicts
             stmt.execute("DROP TABLE IF EXISTS TASKS");
+            stmt.execute("DROP TABLE IF EXISTS RSRC");
             stmt.execute("DROP TABLE IF EXISTS PROJECTS");
 
             // Create projects table with more detailed projects
@@ -145,6 +158,40 @@ public class TestDatabaseManager {
                     "'Update and revise organizational security policies', " +
                     "'Planned', 'Jennifer Lopez', 'High', " +
                     "CURRENT_DATE + 31, CURRENT_DATE + 60)");
+
+            // Create P6 Resources table (RSRC)
+            stmt.execute("CREATE TABLE RSRC (" +
+                    "id NUMBER PRIMARY KEY, " +
+                    "name VARCHAR2(100) NOT NULL, " +
+                    "email VARCHAR2(100), " +
+                    "phone VARCHAR2(20), " +
+                    "department VARCHAR2(50), " +
+                    "role VARCHAR2(50), " +
+                    "cost_rate NUMBER, " +
+                    "availability NUMBER, " +
+                    "calendar_id NUMBER)");
+
+            // Insert sample resources
+            stmt.execute("INSERT INTO RSRC VALUES " +
+                    "(101, 'John Anderson', 'janderson@example.com', '555-1001', 'IT', 'Senior Developer', 85.00, 100, 1)");
+            stmt.execute("INSERT INTO RSRC VALUES " +
+                    "(102, 'Emily Roberts', 'eroberts@example.com', '555-1002', 'IT', 'Solution Architect', 95.00, 80, 1)");
+            stmt.execute("INSERT INTO RSRC VALUES " +
+                    "(103, 'Michael Chen', 'mchen@example.com', '555-1003', 'Business Analysis', 'Business Analyst', 75.00, 100, 1)");
+            stmt.execute("INSERT INTO RSRC VALUES " +
+                    "(104, 'Sarah Kim', 'skim@example.com', '555-1004', 'UX', 'UX Designer', 80.00, 90, 1)");
+            stmt.execute("INSERT INTO RSRC VALUES " +
+                    "(105, 'David Martinez', 'dmartinez@example.com', '555-1005', 'Supply Chain', 'Supply Chain Analyst', 70.00, 100, 1)");
+            stmt.execute("INSERT INTO RSRC VALUES " +
+                    "(106, 'Lisa Wong', 'lwong@example.com', '555-1006', 'Business Analysis', 'Process Analyst', 75.00, 90, 1)");
+            stmt.execute("INSERT INTO RSRC VALUES " +
+                    "(107, 'Alex Rodriguez', 'arodriguez@example.com', '555-1007', 'Strategy', 'Digital Strategist', 90.00, 80, 1)");
+            stmt.execute("INSERT INTO RSRC VALUES " +
+                    "(108, 'Rachel Green', 'rgreen@example.com', '555-1008', 'IT', 'Technology Analyst', 80.00, 100, 1)");
+            stmt.execute("INSERT INTO RSRC VALUES " +
+                    "(109, 'Thomas Wilson', 'twilson@example.com', '555-1009', 'Security', 'Security Specialist', 85.00, 90, 1)");
+            stmt.execute("INSERT INTO RSRC VALUES " +
+                    "(110, 'Jennifer Lopez', 'jlopez@example.com', '555-1010', 'Compliance', 'Compliance Officer', 75.00, 100, 1)");
         }
     }
 
@@ -152,6 +199,7 @@ public class TestDatabaseManager {
         try (Statement stmt = conn.createStatement()) {
             // Drop existing tables to avoid conflicts
             stmt.execute("DROP TABLE IF EXISTS PA_TASKS");
+            stmt.execute("DROP TABLE IF EXISTS HR_ALL_PEOPLE");
             stmt.execute("DROP TABLE IF EXISTS PA_PROJECTS");
 
             // Create projects table with corresponding projects
@@ -250,6 +298,51 @@ public class TestDatabaseManager {
                     "'Comprehensive review and update of security policies', " +
                     "'Planned', 'Mason Taylor', 'High', " +
                     "CURRENT_DATE + 31, CURRENT_DATE + 60)");
+
+            // Create EBS Resources table (HR_ALL_PEOPLE)
+            stmt.execute("CREATE TABLE HR_ALL_PEOPLE (" +
+                    "person_id NUMBER PRIMARY KEY, " +
+                    "full_name VARCHAR2(100) NOT NULL, " +
+                    "email_address VARCHAR2(100), " +
+                    "phone_number VARCHAR2(20), " +
+                    "department_name VARCHAR2(50), " +
+                    "job_title VARCHAR2(50), " +
+                    "salary NUMBER, " +
+                    "hire_date DATE, " +
+                    "employee_number VARCHAR2(20), " +
+                    "manager_id NUMBER)");
+
+            // Insert sample HR resources that correspond to P6 resources
+            stmt.execute("INSERT INTO HR_ALL_PEOPLE VALUES " +
+                    "(1001, 'John Anderson', 'john.anderson@company.com', '888-101', " +
+                    "'Information Technology', 'Sr. Developer', 120000, CURRENT_DATE - 1000, 'EMP001', 1050)");
+            stmt.execute("INSERT INTO HR_ALL_PEOPLE VALUES " +
+                    "(1002, 'Emily Roberts', 'emily.roberts@company.com', '888-102', " +
+                    "'Information Technology', 'Principal Architect', 140000, CURRENT_DATE - 1200, 'EMP002', 1050)");
+            stmt.execute("INSERT INTO HR_ALL_PEOPLE VALUES " +
+                    "(1003, 'Michael Chen', 'michael.chen@company.com', '888-103', " +
+                    "'Business Analysis', 'Senior Business Analyst', 110000, CURRENT_DATE - 900, 'EMP003', 1051)");
+            stmt.execute("INSERT INTO HR_ALL_PEOPLE VALUES " +
+                    "(1004, 'Sarah Kim', 'sarah.kim@company.com', '888-104', " +
+                    "'User Experience', 'Lead UX Designer', 115000, CURRENT_DATE - 800, 'EMP004', 1052)");
+            stmt.execute("INSERT INTO HR_ALL_PEOPLE VALUES " +
+                    "(1005, 'David Martinez', 'david.martinez@company.com', '888-105', " +
+                    "'Supply Chain Management', 'Supply Chain Specialist', 105000, CURRENT_DATE - 750, 'EMP005', 1053)");
+            stmt.execute("INSERT INTO HR_ALL_PEOPLE VALUES " +
+                    "(1006, 'Lisa Wong', 'lisa.wong@company.com', '888-106', " +
+                    "'Business Analysis', 'Process Improvement Specialist', 108000, CURRENT_DATE - 920, 'EMP006', 1051)");
+            stmt.execute("INSERT INTO HR_ALL_PEOPLE VALUES " +
+                    "(1007, 'Alexander Rodriguez', 'alex.rodriguez@company.com', '888-107', " +
+                    "'Strategic Planning', 'Digital Strategy Director', 135000, CURRENT_DATE - 1100, 'EMP007', 1054)");
+            stmt.execute("INSERT INTO HR_ALL_PEOPLE VALUES " +
+                    "(1008, 'Rachel Green', 'rachel.green@company.com', '888-108', " +
+                    "'Information Technology', 'Technology Analyst II', 98000, CURRENT_DATE - 600, 'EMP008', 1050)");
+            stmt.execute("INSERT INTO HR_ALL_PEOPLE VALUES " +
+                    "(1009, 'Thomas Wilson', 'thomas.wilson@company.com', '888-109', " +
+                    "'Information Security', 'Security Engineer', 125000, CURRENT_DATE - 850, 'EMP009', 1055)");
+            stmt.execute("INSERT INTO HR_ALL_PEOPLE VALUES " +
+                    "(1010, 'Jennifer Lopez', 'jennifer.lopez@company.com', '888-110', " +
+                    "'Compliance', 'Senior Compliance Officer', 118000, CURRENT_DATE - 1050, 'EMP010', 1056)");
         }
     }
 
@@ -290,6 +383,55 @@ public class TestDatabaseManager {
             }
         } catch (SQLException e) {
             System.err.println("Error printing project table contents:");
+            e.printStackTrace();
+        }
+    }
+
+    public static void printResourceTableContents(DatabaseConnectionManager dbManager, String tableName) {
+        try {
+            System.out.println("Printing contents of resource table: " + tableName);
+            try (Connection conn = dbManager.getConnection();
+                 Statement stmt = conn.createStatement()) {
+
+                ResultSet rs;
+                int count = 0;
+
+                if (tableName.equalsIgnoreCase("RSRC")) {
+                    // P6 resource table
+                    rs = stmt.executeQuery("SELECT id, name, email, department, role FROM " + tableName);
+
+                    while (rs.next()) {
+                        count++;
+                        System.out.println("Resource " + count + ": " +
+                                "ID=" + rs.getInt("id") +
+                                ", Name=" + rs.getString("name") +
+                                ", Email=" + rs.getString("email") +
+                                ", Department=" + rs.getString("department") +
+                                ", Role=" + rs.getString("role"));
+                    }
+                } else {
+                    // EBS resource table
+                    rs = stmt.executeQuery("SELECT person_id, full_name, email_address, department_name, job_title FROM " + tableName);
+
+                    while (rs.next()) {
+                        count++;
+                        System.out.println("Resource " + count + ": " +
+                                "ID=" + rs.getInt("person_id") +
+                                ", Name=" + rs.getString("full_name") +
+                                ", Email=" + rs.getString("email_address") +
+                                ", Department=" + rs.getString("department_name") +
+                                ", Job=" + rs.getString("job_title"));
+                    }
+                }
+
+                rs.close();
+
+                if (count == 0) {
+                    System.err.println("NO RESOURCES FOUND IN TABLE: " + tableName);
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Error printing resource table contents:");
             e.printStackTrace();
         }
     }

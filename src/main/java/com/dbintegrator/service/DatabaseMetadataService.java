@@ -140,6 +140,7 @@ public class DatabaseMetadataService {
      * @return List of TableColumn objects
      * @throws SQLException if database access error occurs
      */
+    // In DatabaseMetadataService.java - add debugging to getTableColumns method
     public List<TableColumn> getTableColumns(String tableName) throws SQLException {
         System.out.println("Getting columns for table: " + tableName);
         List<TableColumn> columns = new ArrayList<>();
@@ -149,7 +150,20 @@ public class DatabaseMetadataService {
         String schemaPattern = getSchemaName();
         System.out.println("Using schema: " + schemaPattern);
 
-        try (ResultSet columnsResultSet = metaData.getColumns(null, schemaPattern, tableName, null)) {
+        // Try to confirm the table exists first
+        try (ResultSet tables = metaData.getTables(null, schemaPattern, tableName.toUpperCase(), new String[]{"TABLE"})) {
+            boolean tableExists = false;
+            while (tables.next()) {
+                tableExists = true;
+                String tableNameResult = tables.getString("TABLE_NAME");
+                System.out.println("Found table: " + tableNameResult);
+            }
+            if (!tableExists) {
+                System.err.println("WARNING: Table " + tableName + " not found in schema " + schemaPattern);
+            }
+        }
+
+        try (ResultSet columnsResultSet = metaData.getColumns(null, schemaPattern, tableName.toUpperCase(), null)) {
             while (columnsResultSet.next()) {
                 String columnName = columnsResultSet.getString("COLUMN_NAME");
                 String dataType = columnsResultSet.getString("TYPE_NAME");
@@ -159,6 +173,10 @@ public class DatabaseMetadataService {
                 columns.add(new TableColumn(columnName, dataType, size, nullable));
                 System.out.println("Found column: " + columnName + " (" + dataType + ")");
             }
+        }
+
+        if (columns.isEmpty()) {
+            System.err.println("WARNING: No columns found for table " + tableName);
         }
 
         return columns;
