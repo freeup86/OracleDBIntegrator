@@ -4,7 +4,6 @@ import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
 import javafx.scene.control.*;
 import javafx.scene.input.MouseButton;
-import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.VBox;
 
@@ -14,6 +13,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import com.dbintegrator.util.DatabaseConnectionManager;
 
@@ -22,6 +22,7 @@ public class ProjectSelectionDialog extends Dialog<Integer> {
     private final String tableName;
     private final ListView<String> projectsListView;
     private TextField projectIdField;
+    private TextField nameSearchField;
     private int selectedProjectId = -1;
 
     public ProjectSelectionDialog(DatabaseConnectionManager dbManager, String tableName, boolean isSource) {
@@ -39,19 +40,41 @@ public class ProjectSelectionDialog extends Dialog<Integer> {
         VBox content = new VBox(10);
         content.setPadding(new Insets(20));
 
-        // Search by ID field
+        // Search fields
         GridPane searchPane = new GridPane();
         searchPane.setHgap(10);
+        searchPane.setVgap(10);
+
+        // Project ID search
         searchPane.add(new Label("Project ID:"), 0, 0);
         projectIdField = new TextField();
         searchPane.add(projectIdField, 1, 0);
-        Button searchButton = new Button("Search");
-        searchButton.setOnAction(e -> searchById());
-        searchPane.add(searchButton, 2, 0);
+        Button idSearchButton = new Button("Search by ID");
+        idSearchButton.setOnAction(e -> searchById());
+        searchPane.add(idSearchButton, 2, 0);
+
+        // Project name search
+        searchPane.add(new Label("Project Name:"), 0, 1);
+        nameSearchField = new TextField();
+        searchPane.add(nameSearchField, 1, 1);
+        Button nameSearchButton = new Button("Search by Name");
+        nameSearchButton.setOnAction(e -> searchByName());
+        searchPane.add(nameSearchButton, 2, 1);
+
+        // Clear search button
+        Button clearSearchButton = new Button("Clear Search");
+        clearSearchButton.setOnAction(e -> {
+            projectIdField.clear();
+            nameSearchField.clear();
+            loadProjects();
+        });
+        searchPane.add(clearSearchButton, 3, 0, 1, 2);
 
         // Projects list
         projectsListView = new ListView<>();
         projectsListView.setPrefHeight(300);
+
+        // Listener to track selected project ID
         projectsListView.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null && newVal.contains("ID:")) {
                 try {
@@ -65,7 +88,7 @@ public class ProjectSelectionDialog extends Dialog<Integer> {
             }
         });
 
-        // Add double-click handler
+        // Add double-click handler for quick selection
         projectsListView.setOnMouseClicked(event -> {
             if (event.getButton() == MouseButton.PRIMARY && event.getClickCount() == 2) {
                 if (selectedProjectId > 0) {
@@ -84,6 +107,8 @@ public class ProjectSelectionDialog extends Dialog<Integer> {
         );
 
         getDialogPane().setContent(content);
+        getDialogPane().setPrefWidth(600);
+        getDialogPane().setPrefHeight(500);
 
         // Load projects on initialize
         loadProjects();
@@ -134,7 +159,6 @@ public class ProjectSelectionDialog extends Dialog<Integer> {
             }
 
             int searchId = Integer.parseInt(idText);
-
             List<String> results = new ArrayList<>();
 
             try (Connection conn = dbManager.getConnection();
@@ -164,13 +188,53 @@ public class ProjectSelectionDialog extends Dialog<Integer> {
             if (results.isEmpty()) {
                 showError("Not Found", "No project found with ID: " + searchId);
             } else {
-                projectsListView.getSelectionModel().select(0);
+                projectsListView.getSelectionModel().selectFirst();
             }
 
         } catch (NumberFormatException e) {
             showError("Invalid Input", "Please enter a valid numeric ID");
         } catch (SQLException e) {
             showError("Database Error", "Error searching for project: " + e.getMessage());
+        }
+    }
+
+    private void searchByName() {
+        String searchText = nameSearchField.getText().trim();
+        if (searchText.isEmpty()) {
+            loadProjects();
+            return;
+        }
+
+        List<String> results = new ArrayList<>();
+
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(
+                     "SELECT id, name, description FROM " + tableName +
+                             " WHERE UPPER(name) LIKE ? ORDER BY name")) {
+
+            stmt.setString(1, "%" + searchText.toUpperCase() + "%");
+            ResultSet rs = stmt.executeQuery();
+
+            while (rs.next()) {
+                int id = rs.getInt("id");
+                String name = rs.getString("name");
+                String description = rs.getString("description");
+
+                String displayText = name + " (ID: " + id + ")";
+                if (description != null && !description.isEmpty()) {
+                    displayText += " - " + description;
+                }
+
+                results.add(displayText);
+            }
+        } catch (SQLException e) {
+            showError("Database Error", "Error searching for projects: " + e.getMessage());
+        }
+
+        projectsListView.setItems(FXCollections.observableArrayList(results));
+
+        if (results.isEmpty()) {
+            showError("Not Found", "No projects found matching: " + searchText);
         }
     }
 

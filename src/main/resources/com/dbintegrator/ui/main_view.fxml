@@ -101,6 +101,8 @@
                             </HBox>
                         </VBox>
                     </SplitPane>
+                    <!-- Log Area -->
+                    <TextArea fx:id="logTextArea" prefHeight="80" minHeight="80" maxHeight="200" editable="false" wrapText="true" />
                 </VBox>
             </Tab>
 
@@ -143,14 +145,4 @@
             </Tab>
         </TabPane>
     </center>
-
-    <bottom>
-        <VBox spacing="5">
-            <padding>
-                <Insets top="5" right="10" bottom="10" left="10" />
-            </padding>
-            <Label text="Log:" />
-            <TextArea fx:id="logTextArea" prefHeight="20" editable="false" wrapText="true" />
-        </VBox>
-    </bottom>
 </BorderPane>

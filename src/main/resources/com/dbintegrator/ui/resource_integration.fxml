@@ -14,28 +14,38 @@
     <!-- Resource Selection Area -->
     <HBox spacing="20" alignment="CENTER_LEFT">
         <VBox spacing="5" HBox.hgrow="ALWAYS" maxWidth="Infinity">
-            <Label text="P6 Resource:" />
-            <Label fx:id="sourceResourceLabel" text="No P6 resource selected" style="-fx-font-weight: bold;" />
-            <Button fx:id="selectSourceResourceButton" text="Select P6 Resource" disable="true" />
+            <Label text="EBS Resources:" />
+            <Label fx:id="sourceResourceLabel" text="No EBD resources selected" style="-fx-font-weight: bold;" />
+            <Button fx:id="selectSourceResourceButton" text="Select EBS Resources" disable="true" />
+            <TextArea fx:id="sourceResourceDetailsArea"
+                      editable="false"
+                      wrapText="true"
+                      prefHeight="100"
+                      promptText="Selected EBS Resources Will Appear Here"/>
         </VBox>
 
         <VBox spacing="5" HBox.hgrow="ALWAYS" maxWidth="Infinity">
-            <Label text="EBS Resource:" />
-            <Label fx:id="destResourceLabel" text="No EBS resource selected" style="-fx-font-weight: bold;" />
-            <Button fx:id="selectDestResourceButton" text="Select EBS Resource" disable="true" />
+            <Label text="P6 Resources:" />
+            <Label fx:id="destResourceLabel" text="No P6 resources selected" style="-fx-font-weight: bold;" />
+            <Button fx:id="selectDestResourceButton" text="Select P6 Resources" disable="true" />
+            <TextArea fx:id="destResourceDetailsArea"
+                      editable="false"
+                      wrapText="true"
+                      prefHeight="100"
+                      promptText="Selected P6 Resources Will Appear Here"/>
         </VBox>
     </HBox>
 
     <!-- Table Selection Area - Fixed to rsrc and hr_all_people -->
-    <HBox spacing="20" alignment="CENTER_LEFT">
+    <HBox spacing="5" alignment="CENTER_LEFT" prefHeight="5" visible="true">
         <VBox spacing="5" HBox.hgrow="ALWAYS" maxWidth="Infinity">
-            <Label text="P6 Resource Table:" />
-            <TextField fx:id="sourceTableField" text="rsrc" editable="false" />
+            <Label text="EBS Resource Table:" />
+            <TextField fx:id="sourceTableField" text="hr_all_people" editable="false" />
         </VBox>
 
         <VBox spacing="5" HBox.hgrow="ALWAYS" maxWidth="Infinity">
-            <Label text="EBS Resource Table:" />
-            <TextField fx:id="destTableField" text="hr_all_people" editable="false" />
+            <Label text="P6 Resource Table:" />
+            <TextField fx:id="destTableField" text="rsrc" editable="false" />
         </VBox>
     </HBox>
 
@@ -71,5 +81,5 @@
     </SplitPane>
 
     <!-- Log Area -->
-    <TextArea fx:id="logTextArea" prefHeight="80" editable="false" wrapText="true" />
+    <TextArea fx:id="logTextArea" prefHeight="80" minHeight="80" maxHeight="200" editable="false" wrapText="true" />
 </VBox>

@@ -147,36 +147,71 @@ public class DatabaseMetadataService {
         Connection connection = connectionManager.getConnection();
         DatabaseMetaData metaData = connection.getMetaData();
 
-        String schemaPattern = getSchemaName();
-        System.out.println("Using schema: " + schemaPattern);
+        // Try multiple schema possibilities
+        String[] schemas = {"PUBLIC", "INFORMATION_SCHEMA", connectionManager.getUsername().toUpperCase()};
 
-        // Try to confirm the table exists first
-        try (ResultSet tables = metaData.getTables(null, schemaPattern, tableName.toUpperCase(), new String[]{"TABLE"})) {
-            boolean tableExists = false;
-            while (tables.next()) {
-                tableExists = true;
-                String tableNameResult = tables.getString("TABLE_NAME");
-                System.out.println("Found table: " + tableNameResult);
-            }
-            if (!tableExists) {
-                System.err.println("WARNING: Table " + tableName + " not found in schema " + schemaPattern);
+        // Try multiple table name variations
+        String[] tableVariations = {
+                tableName,
+                tableName.toUpperCase(),
+                tableName.toLowerCase(),
+                "HR_ALL_PEOPLE",
+                "hr_all_people",
+                "RSRC",
+                "rsrc"
+        };
+
+        for (String schema : schemas) {
+            for (String variation : tableVariations) {
+                try {
+                    System.out.println("Attempting to find columns in schema: " + schema + ", table: " + variation);
+
+                    try (ResultSet columnsResultSet = metaData.getColumns(null, schema, variation, null)) {
+                        boolean columnsFound = false;
+                        while (columnsResultSet.next()) {
+                            columnsFound = true;
+                            String columnName = columnsResultSet.getString("COLUMN_NAME");
+                            String dataType = columnsResultSet.getString("TYPE_NAME");
+                            int size = columnsResultSet.getInt("COLUMN_SIZE");
+                            boolean nullable = columnsResultSet.getInt("NULLABLE") == DatabaseMetaData.columnNullable;
+
+                            columns.add(new TableColumn(columnName, dataType, size, nullable));
+                            System.out.println("Found column: " + columnName + " (" + dataType + ")");
+                        }
+
+                        if (columnsFound) {
+                            return columns;
+                        }
+                    }
+                } catch (SQLException e) {
+                    System.err.println("Error finding columns for " + variation + " in schema " + schema + ": " + e.getMessage());
+                }
             }
         }
 
-        try (ResultSet columnsResultSet = metaData.getColumns(null, schemaPattern, tableName.toUpperCase(), null)) {
-            while (columnsResultSet.next()) {
-                String columnName = columnsResultSet.getString("COLUMN_NAME");
-                String dataType = columnsResultSet.getString("TYPE_NAME");
-                int size = columnsResultSet.getInt("COLUMN_SIZE");
-                boolean nullable = columnsResultSet.getInt("NULLABLE") == DatabaseMetaData.columnNullable;
+        // Fallback: try direct query to retrieve columns
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT * FROM " + tableName + " WHERE 1=0")) {
 
-                columns.add(new TableColumn(columnName, dataType, size, nullable));
-                System.out.println("Found column: " + columnName + " (" + dataType + ")");
+            ResultSetMetaData rsmd = rs.getMetaData();
+            int columnCount = rsmd.getColumnCount();
+
+            for (int i = 1; i <= columnCount; i++) {
+                columns.add(new TableColumn(
+                        rsmd.getColumnName(i),
+                        rsmd.getColumnTypeName(i),
+                        rsmd.getColumnDisplaySize(i),
+                        rsmd.isNullable(i) == ResultSetMetaData.columnNullable
+                ));
             }
+        } catch (SQLException e) {
+            System.err.println("Fallback column retrieval failed: " + e.getMessage());
+            throw e;
         }
 
         if (columns.isEmpty()) {
             System.err.println("WARNING: No columns found for table " + tableName);
+            throw new SQLException("No columns found for table " + tableName);
         }
 
         return columns;

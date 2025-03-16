@@ -70,6 +70,6 @@
         </VBox>
     </SplitPane>
 
-    <!-- Log Area (only this TextArea should exist) -->
-    <TextArea fx:id="logTextArea" prefHeight="180" editable="false" wrapText="true" VBox.vgrow="ALWAYS"/>
+    <!-- Log Area -->
+    <TextArea fx:id="logTextArea" prefHeight="80" minHeight="80" maxHeight="200" editable="false" wrapText="true" />
 </VBox>

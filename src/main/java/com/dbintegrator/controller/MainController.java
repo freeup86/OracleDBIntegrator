@@ -6,6 +6,7 @@ import com.dbintegrator.model.TableColumn;
 import com.dbintegrator.service.DatabaseMetadataService;
 import com.dbintegrator.service.DataIntegrationService;
 import com.dbintegrator.ui.MultiProjectSelectionDialog;
+import com.dbintegrator.ui.ProjectSelectionDialog;
 import com.dbintegrator.util.ConfigurationManager;
 import com.dbintegrator.util.DatabaseConnectionManager;
 import com.dbintegrator.util.TestDatabaseManager;
@@ -337,29 +338,39 @@ public class MainController {
         }
 
         String tableName = isSource ? SOURCE_TABLE_NAME : DEST_TABLE_NAME;
-        MultiProjectSelectionDialog dialog = new MultiProjectSelectionDialog(dbManager, tableName, isSource);
+        ProjectSelectionDialog dialog = new ProjectSelectionDialog(dbManager, tableName, isSource);
 
-        dialog.showAndWait().ifPresent(selectedProjects -> {
-            if (selectedProjects != null && !selectedProjects.isEmpty()) {
-                // Store selected projects
-                if (isSource) {
-                    this.selectedSourceProjects = selectedProjects;
-                    updateProjectsLabel(true);
-                } else {
-                    this.selectedDestProjects = selectedProjects;
-                    updateProjectsLabel(false);
+        Optional<Integer> result = dialog.showAndWait();
+        if (result.isPresent() && result.get() > 0) {
+            try {
+                Project selectedProject = getProjectById(dbManager, tableName, result.get());
+
+                if (selectedProject != null) {
+                    List<Project> selectedProjects = new ArrayList<>();
+                    selectedProjects.add(selectedProject);
+
+                    // Store selected projects
+                    if (isSource) {
+                        this.selectedSourceProjects = selectedProjects;
+                        updateProjectsLabel(true);
+                    } else {
+                        this.selectedDestProjects = selectedProjects;
+                        updateProjectsLabel(false);
+                    }
+
+                    // Log selection
+                    logTextArea.appendText("Selected " + selectedProjects.size() + " " +
+                            (isSource ? "source" : "destination") + " project(s)\n");
+
+                    // Enable execute button when both source and destination projects are selected and mappings exist
+                    if (!this.selectedSourceProjects.isEmpty() && !this.selectedDestProjects.isEmpty() && !mappings.isEmpty()) {
+                        executeButton.setDisable(false);
+                    }
                 }
-
-                // Log selection
-                logTextArea.appendText("Selected " + selectedProjects.size() + " " +
-                        (isSource ? "source" : "destination") + " projects\n");
-
-                // Enable execute button when both source and destination projects are selected and mappings exist
-                if (!this.selectedSourceProjects.isEmpty() && !this.selectedDestProjects.isEmpty() && !mappings.isEmpty()) {
-                    executeButton.setDisable(false);
-                }
+            } catch (SQLException e) {
+                showError("Database Error", "Failed to retrieve project details: " + e.getMessage());
             }
-        });
+        }
     }
 
     private void updateProjectsLabel(boolean isSource) {
@@ -382,6 +393,28 @@ public class MainController {
 
             projectDetailsArea.setText(projectIds.toString());
         }
+    }
+
+    private Project getProjectById(DatabaseConnectionManager dbManager, String tableName, int projectId) throws SQLException {
+        String query = "SELECT id, name, description FROM " + tableName + " WHERE id = ?";
+
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+
+            stmt.setInt(1, projectId);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return new Project(
+                            rs.getInt("id"),
+                            rs.getString("name"),
+                            rs.getString("description")
+                    );
+                }
+            }
+        }
+
+        return null;
     }
 
     private void addMapping() {
