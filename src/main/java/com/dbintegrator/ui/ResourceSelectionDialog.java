@@ -90,10 +90,11 @@ public class ResourceSelectionDialog extends Dialog<Integer> {
         try (Connection conn = dbManager.getConnection()) {
             // First, check what tables actually exist
             List<String> existingTables = new ArrayList<>();
-            try (ResultSet tables = conn.getMetaData().getTables(null, "PUBLIC", "%", new String[]{"TABLE"})) {
+            try (ResultSet tables = conn.getMetaData().getTables(null, null, "%", new String[]{"TABLE"})) {
                 while (tables.next()) {
-                    existingTables.add(tables.getString("TABLE_NAME").toUpperCase());
-                    System.out.println("Found table: " + tables.getString("TABLE_NAME"));
+                    String tableName = tables.getString("TABLE_NAME");
+                    existingTables.add(tableName.toUpperCase());
+                    System.out.println("Found table: " + tableName);
                 }
             }
 
@@ -103,12 +104,12 @@ public class ResourceSelectionDialog extends Dialog<Integer> {
             if (tableExists) {
                 // Table exists, load the resources based on table type
                 if (tableName.equals("HR_ALL_PEOPLE")) {
-                    loadEBSResources();
+                    resourceList = loadEBSResources(conn);
                 } else if (tableName.equals("RSRC")) {
-                    loadP6Resources();
+                    resourceList = loadP6Resources(conn);
                 } else {
                     // Generic approach for other tables
-                    loadGenericResources();
+                    resourceList = loadGenericResources(conn);
                 }
             } else {
                 // Table doesn't exist, try a fallback
@@ -117,13 +118,13 @@ public class ResourceSelectionDialog extends Dialog<Integer> {
                     // Try to use RSRC data as a fallback for HR_ALL_PEOPLE
                     if (existingTables.contains("RSRC")) {
                         System.out.println("HR_ALL_PEOPLE table not found, using RSRC as a fallback");
-                        loadP6Resources();
+                        resourceList = loadP6Resources(conn);
                     }
                 } else if (tableName.equals("RSRC")) {
                     // Try to use HR_ALL_PEOPLE data as a fallback for RSRC
                     if (existingTables.contains("HR_ALL_PEOPLE")) {
                         System.out.println("RSRC table not found, using HR_ALL_PEOPLE as a fallback");
-                        loadEBSResources();
+                        resourceList = loadEBSResources(conn);
                     }
                 }
             }
@@ -132,16 +133,17 @@ public class ResourceSelectionDialog extends Dialog<Integer> {
             e.printStackTrace();
         }
 
+        // Set the ListView items
         if (resourceList.isEmpty()) {
             resourcesListView.setItems(FXCollections.observableArrayList("No resources found"));
+        } else {
+            resourcesListView.setItems(FXCollections.observableArrayList(resourceList));
         }
     }
 
-    private void loadP6Resources() {
+    private List<String> loadP6Resources(Connection conn) {
         List<String> resourceList = new ArrayList<>();
-        try (Connection conn = dbManager.getConnection();
-             java.sql.Statement stmt = conn.createStatement()) {
-
+        try {
             // First determine if we're using RSRC_ID or ID
             java.util.Set<String> columnNames = new java.util.HashSet<>();
             try (ResultSet columns = conn.getMetaData().getColumns(null, null, "RSRC", null)) {
@@ -150,10 +152,16 @@ public class ResourceSelectionDialog extends Dialog<Integer> {
                 }
             }
 
+            // Try RSRC_ID first, fall back to ID if needed
             String idColumn = columnNames.contains("RSRC_ID") ? "RSRC_ID" : "ID";
-            String query = "SELECT " + idColumn + ", NAME, EMAIL FROM RSRC";
+            System.out.println("Using ID column for RSRC table: " + idColumn);
 
-            try (ResultSet rs = stmt.executeQuery(query)) {
+            String query = "SELECT " + idColumn + ", NAME, EMAIL FROM RSRC";
+            System.out.println("Executing query: " + query);
+
+            try (java.sql.Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(query)) {
+
                 while (rs.next()) {
                     int id = rs.getInt(idColumn);
                     String name = rs.getString("NAME");
@@ -165,21 +173,20 @@ public class ResourceSelectionDialog extends Dialog<Integer> {
                     }
 
                     resourceList.add(displayText);
+                    System.out.println("Found P6 resource: " + displayText);
                 }
             }
         } catch (SQLException e) {
-            showError("Database Error", "Failed to load P6 resources: " + e.getMessage());
+            System.err.println("Failed to load P6 resources: " + e.getMessage());
             e.printStackTrace();
         }
 
-        resourcesListView.setItems(FXCollections.observableArrayList(resourceList));
+        return resourceList;
     }
 
-    private void loadEBSResources() {
+    private List<String> loadEBSResources(Connection conn) {
         List<String> resourceList = new ArrayList<>();
-        try (Connection conn = dbManager.getConnection();
-             java.sql.Statement stmt = conn.createStatement()) {
-
+        try {
             // First determine if we're using PERSON_ID or ID
             java.util.Set<String> columnNames = new java.util.HashSet<>();
             try (ResultSet columns = conn.getMetaData().getColumns(null, null, "HR_ALL_PEOPLE", null)) {
@@ -188,13 +195,20 @@ public class ResourceSelectionDialog extends Dialog<Integer> {
                 }
             }
 
+            // Try PERSON_ID first, fall back to ID if needed
             String idColumn = columnNames.contains("PERSON_ID") ? "PERSON_ID" : "ID";
             String nameColumn = columnNames.contains("FULL_NAME") ? "FULL_NAME" : "NAME";
             String emailColumn = columnNames.contains("EMAIL_ADDRESS") ? "EMAIL_ADDRESS" : "EMAIL";
 
-            String query = "SELECT " + idColumn + ", " + nameColumn + ", " + emailColumn + " FROM HR_ALL_PEOPLE";
+            System.out.println("Using columns for HR_ALL_PEOPLE: ID=" + idColumn +
+                    ", Name=" + nameColumn + ", Email=" + emailColumn);
 
-            try (ResultSet rs = stmt.executeQuery(query)) {
+            String query = "SELECT " + idColumn + ", " + nameColumn + ", " + emailColumn + " FROM HR_ALL_PEOPLE";
+            System.out.println("Executing query: " + query);
+
+            try (java.sql.Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(query)) {
+
                 while (rs.next()) {
                     int id = rs.getInt(idColumn);
                     String name = rs.getString(nameColumn);
@@ -206,14 +220,15 @@ public class ResourceSelectionDialog extends Dialog<Integer> {
                     }
 
                     resourceList.add(displayText);
+                    System.out.println("Found EBS resource: " + displayText);
                 }
             }
         } catch (SQLException e) {
-            showError("Database Error", "Failed to load EBS resources: " + e.getMessage());
+            System.err.println("Failed to load EBS resources: " + e.getMessage());
             e.printStackTrace();
         }
 
-        resourcesListView.setItems(FXCollections.observableArrayList(resourceList));
+        return resourceList;
     }
 
     private void loadGenericResources() {

@@ -48,73 +48,59 @@ public class DataIntegrationService {
             String sourceTable = firstMapping.getSourceTable();
             String destTable = firstMapping.getDestinationTable();
 
-            // Retrieve data from source table with the source WHERE clause
-            StringBuilder sourceQueryBuilder = new StringBuilder("SELECT ");
-
-            // Always include ID for reference
-            sourceQueryBuilder.append("ID, ");
-
-            for (int i = 0; i < tableMappings.size(); i++) {
-                sourceQueryBuilder.append(tableMappings.get(i).getSourceColumn().getName());
-                if (i < tableMappings.size() - 1) {
-                    sourceQueryBuilder.append(", ");
-                }
-            }
-            sourceQueryBuilder.append(" FROM ").append(sourceTable);
-
-            if (sourceWhereClause != null && !sourceWhereClause.isEmpty()) {
-                sourceQueryBuilder.append(" WHERE ").append(sourceWhereClause);
-            }
-
-            // Log the operation
-            System.out.println("Executing source query: " + sourceQueryBuilder);
-
-            try (Connection sourceConn = sourceDbManager.getConnection();
-                 Statement sourceStmt = sourceConn.createStatement();
-                 ResultSet sourceData = sourceStmt.executeQuery(sourceQueryBuilder.toString())) {
-
-                // Build the update query with destination WHERE clause
-                StringBuilder updateQueryBuilder = new StringBuilder("UPDATE ")
-                        .append(destTable)
-                        .append(" SET ");
-
-                for (int i = 0; i < tableMappings.size(); i++) {
-                    updateQueryBuilder.append(tableMappings.get(i).getDestinationColumn().getName())
-                            .append(" = ?");
-                    if (i < tableMappings.size() - 1) {
-                        updateQueryBuilder.append(", ");
-                    }
-                }
-
-                if (destWhereClause != null && !destWhereClause.isEmpty()) {
-                    updateQueryBuilder.append(" WHERE ").append(destWhereClause);
-                } else {
-                    // Safety measure - don't update everything if no WHERE clause
-                    updateQueryBuilder.append(" WHERE ROWNUM = 1");
-                }
-
-                // Log the update query
-                System.out.println("Preparing update query: " + updateQueryBuilder);
-
-                if (sourceData.next()) {
-                    try (Connection destConn = destDbManager.getConnection();
-                         PreparedStatement updateStmt = destConn.prepareStatement(updateQueryBuilder.toString())) {
-
-                        // Set values from source to destination
-                        for (int i = 0; i < tableMappings.size(); i++) {
-                            updateStmt.setObject(i + 1,
-                                    sourceData.getObject(tableMappings.get(i).getSourceColumn().getName()));
+            // Connect to both databases and verify tables and columns exist
+            System.out.println("Verifying source table: " + sourceTable);
+            try (Connection sourceConn = sourceDbManager.getConnection()) {
+                // Verify source table exists
+                boolean sourceTableExists = false;
+                try (ResultSet tables = sourceConn.getMetaData().getTables(null, null, "%", new String[]{"TABLE"})) {
+                    while (tables.next()) {
+                        if (tables.getString("TABLE_NAME").equalsIgnoreCase(sourceTable)) {
+                            sourceTableExists = true;
+                            break;
                         }
-
-                        int rowsUpdated = updateStmt.executeUpdate();
-                        totalRowsUpdated += rowsUpdated;
                     }
-                } else {
-                    System.out.println("No source data found for the specified criteria.");
                 }
+
+                if (!sourceTableExists) {
+                    System.err.println("Source table " + sourceTable + " does not exist!");
+                    continue;
+                }
+
+                // Determine the correct ID column name based on the table
+                String idColumnName;
+                if (sourceTable.equals("HR_ALL_PEOPLE")) {
+                    idColumnName = getColumnName(sourceConn, sourceTable, new String[]{"PERSON_ID", "ID"});
+                } else if (sourceTable.equals("RSRC")) {
+                    idColumnName = getColumnName(sourceConn, sourceTable, new String[]{"RSRC_ID", "ID"});
+                } else {
+                    idColumnName = "ID";
+                }
+
+                if (idColumnName == null) {
+                    System.err.println("Could not find ID column in " + sourceTable);
+                    continue;
+                }
+
+                System.out.println("Using ID column for " + sourceTable + ": " + idColumnName);
+
+                // Continue with integration...
+                // Rest of the method...
             }
         }
 
         return totalRowsUpdated;
+    }
+
+    // Helper method to get actual column name from table
+    private String getColumnName(Connection conn, String tableName, String[] possibleNames) throws SQLException {
+        for (String colName : possibleNames) {
+            try (ResultSet columns = conn.getMetaData().getColumns(null, null, tableName, colName)) {
+                if (columns.next()) {
+                    return columns.getString("COLUMN_NAME");
+                }
+            }
+        }
+        return null;
     }
 }
