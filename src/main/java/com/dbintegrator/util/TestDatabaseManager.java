@@ -159,17 +159,17 @@ public class TestDatabaseManager {
                     "'Planned', 'Jennifer Lopez', 'High', " +
                     "CURRENT_DATE + 31, CURRENT_DATE + 60)");
 
-            // Create P6 Resources table (RSRC)
+            // Create P6 Resources table (RSRC) with RSRC_ID instead of ID
             stmt.execute("CREATE TABLE RSRC (" +
-                    "id NUMBER PRIMARY KEY, " +
-                    "name VARCHAR2(100) NOT NULL, " +
-                    "email VARCHAR2(100), " +
-                    "phone VARCHAR2(20), " +
-                    "department VARCHAR2(50), " +
-                    "role VARCHAR2(50), " +
-                    "cost_rate NUMBER, " +
-                    "availability NUMBER, " +
-                    "calendar_id NUMBER)");
+                    "RSRC_ID NUMBER PRIMARY KEY, " +  // Changed from ID to RSRC_ID
+                    "NAME VARCHAR2(100) NOT NULL, " +
+                    "EMAIL VARCHAR2(100), " +
+                    "PHONE VARCHAR2(20), " +
+                    "DEPARTMENT VARCHAR2(50), " +
+                    "ROLE VARCHAR2(50), " +
+                    "COST_RATE NUMBER, " +
+                    "AVAILABILITY NUMBER, " +
+                    "CALENDAR_ID NUMBER)");
 
             // Insert sample resources
             stmt.execute("INSERT INTO RSRC VALUES " +
@@ -299,18 +299,18 @@ public class TestDatabaseManager {
                     "'Planned', 'Mason Taylor', 'High', " +
                     "CURRENT_DATE + 31, CURRENT_DATE + 60)");
 
-            // Create EBS Resources table (HR_ALL_PEOPLE)
+            // Create EBS Resources table (HR_ALL_PEOPLE) with PERSON_ID instead of ID
             stmt.execute("CREATE TABLE HR_ALL_PEOPLE (" +
-                    "person_id NUMBER PRIMARY KEY, " +
-                    "full_name VARCHAR2(100) NOT NULL, " +
-                    "email_address VARCHAR2(100), " +
-                    "phone_number VARCHAR2(20), " +
-                    "department_name VARCHAR2(50), " +
-                    "job_title VARCHAR2(50), " +
-                    "salary NUMBER, " +
-                    "hire_date DATE, " +
-                    "employee_number VARCHAR2(20), " +
-                    "manager_id NUMBER)");
+                    "PERSON_ID NUMBER PRIMARY KEY, " +  // Changed from ID to PERSON_ID
+                    "FULL_NAME VARCHAR2(100) NOT NULL, " +
+                    "EMAIL_ADDRESS VARCHAR2(100), " +
+                    "PHONE_NUMBER VARCHAR2(20), " +
+                    "DEPARTMENT_NAME VARCHAR2(50), " +
+                    "JOB_TITLE VARCHAR2(50), " +
+                    "SALARY NUMBER, " +
+                    "HIRE_DATE DATE, " +
+                    "EMPLOYEE_NUMBER VARCHAR2(20), " +
+                    "MANAGER_ID NUMBER)");
 
             // Insert sample HR resources that correspond to P6 resources
             stmt.execute("INSERT INTO HR_ALL_PEOPLE VALUES " +
@@ -397,30 +397,30 @@ public class TestDatabaseManager {
                 int count = 0;
 
                 if (tableName.equalsIgnoreCase("RSRC")) {
-                    // P6 resource table
-                    rs = stmt.executeQuery("SELECT id, name, email, department, role FROM " + tableName);
+                    // P6 resource table - use RSRC_ID instead of ID
+                    rs = stmt.executeQuery("SELECT RSRC_ID, NAME, EMAIL, DEPARTMENT, ROLE FROM " + tableName);
 
                     while (rs.next()) {
                         count++;
                         System.out.println("Resource " + count + ": " +
-                                "ID=" + rs.getInt("id") +
-                                ", Name=" + rs.getString("name") +
-                                ", Email=" + rs.getString("email") +
-                                ", Department=" + rs.getString("department") +
-                                ", Role=" + rs.getString("role"));
+                                "ID=" + rs.getInt("RSRC_ID") +
+                                ", Name=" + rs.getString("NAME") +
+                                ", Email=" + rs.getString("EMAIL") +
+                                ", Department=" + rs.getString("DEPARTMENT") +
+                                ", Role=" + rs.getString("ROLE"));
                     }
                 } else {
-                    // EBS resource table
-                    rs = stmt.executeQuery("SELECT person_id, full_name, email_address, department_name, job_title FROM " + tableName);
+                    // EBS resource table - use PERSON_ID instead of ID
+                    rs = stmt.executeQuery("SELECT PERSON_ID, FULL_NAME, EMAIL_ADDRESS, DEPARTMENT_NAME, JOB_TITLE FROM " + tableName);
 
                     while (rs.next()) {
                         count++;
                         System.out.println("Resource " + count + ": " +
-                                "ID=" + rs.getInt("person_id") +
-                                ", Name=" + rs.getString("full_name") +
-                                ", Email=" + rs.getString("email_address") +
-                                ", Department=" + rs.getString("department_name") +
-                                ", Job=" + rs.getString("job_title"));
+                                "ID=" + rs.getInt("PERSON_ID") +
+                                ", Name=" + rs.getString("FULL_NAME") +
+                                ", Email=" + rs.getString("EMAIL_ADDRESS") +
+                                ", Department=" + rs.getString("DEPARTMENT_NAME") +
+                                ", Job=" + rs.getString("JOB_TITLE"));
                     }
                 }
 

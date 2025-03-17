@@ -49,9 +49,12 @@ public class ResourceIntegrationController {
     private Resource selectedDestResource;
     private ObservableList<ColumnMapping> resourceMappings = FXCollections.observableArrayList();
 
-    // Fixed table names
-    private static final String SOURCE_TABLE_NAME = "HR_ALL_PEOPLE"; // EBS resources
-    private static final String DEST_TABLE_NAME = "RSRC"; // P6 resources
+    // Fixed table names - updated to reflect EBS as source, P6 as destination
+    private static final String SOURCE_TABLE_NAME = "HR_ALL_PEOPLE"; // EBS resources as source
+    private static final String DEST_TABLE_NAME = "RSRC"; // P6 resources as destination
+
+    // Flag to detect if we're in test mode
+    private boolean isTestMode = false;
 
     @FXML
     public void initialize() {
@@ -98,10 +101,12 @@ public class ResourceIntegrationController {
     private void setupEventHandlers() {
         if (selectSourceResourceButton != null) {
             selectSourceResourceButton.setOnAction(event -> selectResource(true));
+            selectSourceResourceButton.setTooltip(new Tooltip("Select an EBS resource from HR_ALL_PEOPLE table"));
         }
 
         if (selectDestResourceButton != null) {
             selectDestResourceButton.setOnAction(event -> selectResource(false));
+            selectDestResourceButton.setTooltip(new Tooltip("Select a P6 resource from RSRC table"));
         }
 
         if (addResourceMappingButton != null) {
@@ -124,12 +129,25 @@ public class ResourceIntegrationController {
         System.out.println("ResourceIntegrationController - setSourceDbManager CALLED");
         this.sourceDbManager = sourceDbManager;
         if (sourceDbManager != null) {
+            // Check if we're in test mode
+            try {
+                Connection conn = sourceDbManager.getConnection();
+                String url = conn.getMetaData().getURL();
+                isTestMode = url.contains("mem:sourcedb") || url.contains("mem:destdb");
+                conn.close();
+            } catch (SQLException e) {
+                System.err.println("Error checking database: " + e.getMessage());
+            }
+
             this.sourceMetadataService = new DatabaseMetadataService(sourceDbManager);
             loadTableColumns(true);
 
-            if (selectSourceResourceButton != null) {
-                selectSourceResourceButton.setDisable(false);
-            }
+            // Always enable the source resource selection button when a connection is available
+            Platform.runLater(() -> {
+                if (selectSourceResourceButton != null) {
+                    selectSourceResourceButton.setDisable(false);
+                }
+            });
         }
     }
 
@@ -140,9 +158,12 @@ public class ResourceIntegrationController {
             this.destMetadataService = new DatabaseMetadataService(destDbManager);
             loadTableColumns(false);
 
-            if (selectDestResourceButton != null) {
-                selectDestResourceButton.setDisable(false);
-            }
+            // Always enable the destination resource selection button when a connection is available
+            Platform.runLater(() -> {
+                if (selectDestResourceButton != null) {
+                    selectDestResourceButton.setDisable(false);
+                }
+            });
         }
     }
 
@@ -156,21 +177,52 @@ public class ResourceIntegrationController {
 
         String tableName = isSource ? SOURCE_TABLE_NAME : DEST_TABLE_NAME;
 
-        ResourceSelectionDialog dialog = new ResourceSelectionDialog(dbManager, tableName, !isSource);
+        // Important: For test mode, override the database manager to use the correct one for each table
+        DatabaseConnectionManager effectiveDbManager = dbManager;
+
+        if (isTestMode) {
+            // In test mode, HR_ALL_PEOPLE is in destDbManager and RSRC is in sourceDbManager
+            if (tableName.equals("HR_ALL_PEOPLE") && destDbManager != null) {
+                effectiveDbManager = destDbManager;
+                System.out.println("Using destination DB manager for HR_ALL_PEOPLE table");
+            } else if (tableName.equals("RSRC") && sourceDbManager != null) {
+                effectiveDbManager = sourceDbManager;
+                System.out.println("Using source DB manager for RSRC table");
+            }
+        }
+
+        // Ensure we have a valid database connection after switching
+        if (effectiveDbManager == null) {
+            showError("Database Error",
+                    "No valid database connection available for the " + tableName + " table.");
+            return;
+        }
+
+        ResourceSelectionDialog dialog = new ResourceSelectionDialog(effectiveDbManager, tableName, !isSource);
 
         Optional<Integer> result = dialog.showAndWait();
+        System.out.println("Dialog result: " + (result.isPresent() ? result.get() : "none"));
+
         if (result.isPresent() && result.get() > 0) {
             try {
-                Resource selectedResource = getResourceById(dbManager, tableName, result.get());
+                Resource selectedResource = getResourceById(effectiveDbManager, tableName, result.get());
+                System.out.println("Resource retrieved: " + (selectedResource != null ?
+                        selectedResource.getName() + " (ID: " + selectedResource.getId() + ")" : "null"));
 
                 if (selectedResource != null) {
                     if (isSource) {
                         this.selectedSourceResource = selectedResource;
-                        updateResourceLabel(true);
+                        System.out.println("Set source resource to: " + selectedResource.getName());
                     } else {
                         this.selectedDestResource = selectedResource;
-                        updateResourceLabel(false);
+                        System.out.println("Set destination resource to: " + selectedResource.getName());
                     }
+
+                    // Ensure UI updates happen on the JavaFX thread
+                    Platform.runLater(() -> {
+                        updateResourceLabel(isSource);
+                        checkExecuteButtonStatus();
+                    });
 
                     // Log selection
                     if (logTextArea != null) {
@@ -178,17 +230,20 @@ public class ResourceIntegrationController {
                                 " resource: " + selectedResource.getName() +
                                 " (ID: " + selectedResource.getId() + ")\n");
                     }
-
-                    // Check execute button status
-                    checkExecuteButtonStatus();
+                } else {
+                    System.err.println("Failed to retrieve resource with ID: " + result.get());
                 }
             } catch (SQLException e) {
+                System.err.println("SQL Error retrieving resource: " + e.getMessage());
+                e.printStackTrace();
                 showError("Database Error", "Failed to retrieve resource details: " + e.getMessage());
             }
         }
     }
 
     private Resource getResourceById(DatabaseConnectionManager dbManager, String tableName, int resourceId) throws SQLException {
+        System.out.println("Getting resource by ID: " + resourceId + " from table: " + tableName);
+
         String query;
         String idColumn;
         String nameColumn;
@@ -199,16 +254,88 @@ public class ResourceIntegrationController {
             idColumn = "PERSON_ID";
             nameColumn = "FULL_NAME";
             emailColumn = "EMAIL_ADDRESS";
-            query = "SELECT " + idColumn + ", " + nameColumn + ", " + emailColumn +
-                    " FROM " + tableName + " WHERE " + idColumn + " = ?";
-        } else {
+        } else if (tableName.equals("RSRC")) {
             // P6 resource table
+            idColumn = "RSRC_ID";
+            nameColumn = "NAME";
+            emailColumn = "EMAIL";
+        } else {
+            // Default for other tables
             idColumn = "ID";
             nameColumn = "NAME";
             emailColumn = "EMAIL";
-            query = "SELECT " + idColumn + ", " + nameColumn + ", " + emailColumn +
-                    " FROM " + tableName + " WHERE " + idColumn + " = ?";
         }
+
+        // Verify the table structure
+        boolean columnsExist = true;
+        try (Connection conn = dbManager.getConnection()) {
+            java.sql.DatabaseMetaData meta = conn.getMetaData();
+            ResultSet columns = meta.getColumns(null, null, tableName, null);
+
+            java.util.Set<String> columnNames = new java.util.HashSet<>();
+            while (columns.next()) {
+                columnNames.add(columns.getString("COLUMN_NAME").toUpperCase());
+            }
+
+            if (!columnNames.contains(idColumn.toUpperCase())) {
+                System.err.println("ID column '" + idColumn + "' not found in table " + tableName);
+                columnsExist = false;
+            }
+            if (!columnNames.contains(nameColumn.toUpperCase())) {
+                System.err.println("Name column '" + nameColumn + "' not found in table " + tableName);
+                columnsExist = false;
+            }
+            if (!columnNames.contains(emailColumn.toUpperCase())) {
+                System.err.println("Email column '" + emailColumn + "' not found in table " + tableName);
+                columnsExist = false;
+            }
+        }
+
+        // If columns don't exist, try a more generic approach
+        if (!columnsExist) {
+            System.out.println("Attempting generic query approach for " + tableName);
+            try (Connection conn = dbManager.getConnection();
+                 java.sql.Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery("SELECT * FROM " + tableName + " WHERE " + idColumn + " = " + resourceId)) {
+
+                if (rs.next()) {
+                    java.sql.ResultSetMetaData meta = rs.getMetaData();
+                    int columnCount = meta.getColumnCount();
+
+                    // Find ID, name, and email columns by best guess
+                    int idColIndex = -1;
+                    int nameColIndex = -1;
+                    int emailColIndex = -1;
+
+                    for (int i = 1; i <= columnCount; i++) {
+                        String colName = meta.getColumnName(i).toUpperCase();
+                        if ((colName.contains("ID") || colName.contains("PERSON") || colName.contains("RSRC")) && idColIndex == -1) {
+                            idColIndex = i;
+                        } else if ((colName.contains("NAME") || colName.contains("FULL")) && nameColIndex == -1) {
+                            nameColIndex = i;
+                        } else if (colName.contains("EMAIL") && emailColIndex == -1) {
+                            emailColIndex = i;
+                        }
+                    }
+
+                    if (idColIndex != -1 && nameColIndex != -1) {
+                        int id = rs.getInt(idColIndex);
+                        String name = rs.getString(nameColIndex);
+                        String email = emailColIndex != -1 ? rs.getString(emailColIndex) : "";
+
+                        System.out.println("Found resource: " + name + " (ID: " + id + ") with email: " + email);
+                        return new Resource(id, name, email);
+                    }
+                }
+            }
+            return null;
+        }
+
+        // Use the standard approach if columns exist
+        query = "SELECT " + idColumn + ", " + nameColumn + ", " + emailColumn +
+                " FROM " + tableName + " WHERE " + idColumn + " = ?";
+
+        System.out.println("Executing query: " + query.replace("?", String.valueOf(resourceId)));
 
         try (Connection conn = dbManager.getConnection();
              PreparedStatement stmt = conn.prepareStatement(query)) {
@@ -217,11 +344,15 @@ public class ResourceIntegrationController {
 
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
-                    return new Resource(
+                    Resource resource = new Resource(
                             rs.getInt(idColumn),
                             rs.getString(nameColumn),
                             rs.getString(emailColumn)
                     );
+                    System.out.println("Retrieved resource: " + resource.getName() + " (ID: " + resource.getId() + ")");
+                    return resource;
+                } else {
+                    System.out.println("No resource found with ID: " + resourceId);
                 }
             }
         }
@@ -233,6 +364,9 @@ public class ResourceIntegrationController {
         Resource resource = isSource ? selectedSourceResource : selectedDestResource;
         Label label = isSource ? sourceResourceLabel : destResourceLabel;
         TextArea detailsArea = isSource ? sourceResourceDetailsArea : destResourceDetailsArea;
+
+        System.out.println("Updating " + (isSource ? "source" : "destination") + " resource label with: " +
+                (resource != null ? resource.getName() : "null"));
 
         if (resource == null) {
             label.setText("No " + (isSource ? "EBS" : "P6") + " resource selected");
@@ -253,7 +387,27 @@ public class ResourceIntegrationController {
     private void loadTableColumns(boolean isSource) {
         try {
             String tableName = isSource ? SOURCE_TABLE_NAME : DEST_TABLE_NAME;
-            DatabaseMetadataService metadataService = isSource ? sourceMetadataService : destMetadataService;
+
+            // For test mode, use the appropriate database connection for each table
+            DatabaseConnectionManager dbManager;
+            if (isTestMode) {
+                if (tableName.equals("HR_ALL_PEOPLE")) {
+                    dbManager = destDbManager;
+                } else {
+                    dbManager = sourceDbManager;
+                }
+            } else {
+                dbManager = isSource ? sourceDbManager : destDbManager;
+            }
+
+            // Add null check here
+            if (dbManager == null) {
+                System.err.println("Cannot load columns - database manager is null for " +
+                        (isSource ? "source" : "destination") + " table: " + tableName);
+                return;
+            }
+
+            DatabaseMetadataService metadataService = new DatabaseMetadataService(dbManager);
             ListView<TableColumn> listView = isSource ? sourceColumnsListView : destColumnsListView;
 
             if (metadataService == null || listView == null) {
@@ -268,7 +422,8 @@ public class ResourceIntegrationController {
                 checkMappingAvailability();
             });
         } catch (SQLException e) {
-            System.err.println("Error loading table columns for " + (isSource ? "source" : "destination") + " table: " + e.getMessage());
+            System.err.println("Error loading table columns for " + (isSource ? "source" : "destination") +
+                    " table: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -351,9 +506,27 @@ public class ResourceIntegrationController {
         }
 
         try {
+            // For test mode, make sure to use the right DB connections
+            DatabaseConnectionManager ebsDbManager;
+            DatabaseConnectionManager p6DbManager;
+
+            if (isTestMode) {
+                ebsDbManager = destDbManager; // HR_ALL_PEOPLE is in destdb in test mode
+                p6DbManager = sourceDbManager; // RSRC is in sourcedb in test mode
+            } else {
+                ebsDbManager = sourceDbManager; // Normal mode: EBS is the source
+                p6DbManager = destDbManager;    // Normal mode: P6 is the destination
+            }
+
+            // Make sure we have valid database connections
+            if (ebsDbManager == null || p6DbManager == null) {
+                showError("Database Error", "Missing database connection for integration.");
+                return;
+            }
+
             // Create integration service
             DataIntegrationService integrationService =
-                    new DataIntegrationService(sourceDbManager, destDbManager);
+                    new DataIntegrationService(ebsDbManager, p6DbManager);
 
             // Log current integration pair
             if (logTextArea != null) {
@@ -363,9 +536,9 @@ public class ResourceIntegrationController {
                         " (ID: " + selectedDestResource.getId() + ")\n");
             }
 
-            // Create WHERE clauses for source and destination resources
+            // Create WHERE clauses for source and destination resources with updated column names
             String sourceWhereClause = "PERSON_ID = " + selectedSourceResource.getId();
-            String destWhereClause = "ID = " + selectedDestResource.getId();
+            String destWhereClause = "RSRC_ID = " + selectedDestResource.getId();
 
             // Perform integration
             int rowsUpdated = integrationService.integrateData(
