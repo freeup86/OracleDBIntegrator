@@ -31,7 +31,7 @@ import java.util.Optional;
 
 public class MainController {
     // Constants for fixed table names
-    private static final String SOURCE_TABLE_NAME = "PROJECTS";
+    private static final String SOURCE_TABLE_NAME = "PROJECT";
     private static final String DEST_TABLE_NAME = "PA_PROJECTS";
 
     // Project Integration Tab Components

@@ -4,6 +4,7 @@ import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
 import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 
 import java.sql.Connection;
@@ -15,11 +16,12 @@ import java.util.List;
 
 import com.dbintegrator.util.DatabaseConnectionManager;
 
-public class ResourceSelectionDialog extends Dialog<Integer> {
+public class ResourceSelectionDialog extends Dialog<List<Integer>> {
     private final DatabaseConnectionManager dbManager;
     private final String tableName;
     private final ListView<String> resourcesListView;
     private final boolean isSource;
+    private final Button selectAllButton;
 
     public ResourceSelectionDialog(DatabaseConnectionManager dbManager, String tableName, boolean isSource) {
         this.dbManager = dbManager;
@@ -27,20 +29,47 @@ public class ResourceSelectionDialog extends Dialog<Integer> {
         this.isSource = isSource;
 
         setTitle("Select " + (isSource ? "P6" : "EBS") + " Resource");
-        setHeaderText("Select a resource from " + tableName);
+        setHeaderText("Select " + (isSource ? "a" : "one or more") + " resource" +
+                (isSource ? "" : "s") + " from " + tableName);
 
         // Create content
         VBox content = new VBox(10);
         content.setPadding(new Insets(20));
 
+        // Add search field
+        TextField searchField = new TextField();
+        searchField.setPromptText("Search by name...");
+        Button searchButton = new Button("Search");
+        searchButton.setOnAction(e -> filterResources(searchField.getText()));
+
+        GridPane searchPane = new GridPane();
+        searchPane.setHgap(10);
+        searchPane.setVgap(10);
+        searchPane.add(searchField, 0, 0);
+        searchPane.add(searchButton, 1, 0);
+        content.getChildren().add(searchPane);
+
         // Resources list
         resourcesListView = new ListView<>();
         resourcesListView.setPrefHeight(300);
 
+        // Default to single select, will be changed by caller if needed
+        resourcesListView.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
+
+        // Create Select All button
+        selectAllButton = new Button("Select All");
+        selectAllButton.setOnAction(e -> selectAllResources());
+        selectAllButton.setVisible(false); // Hidden by default, shown only in multi-select mode
+
+        // Button bar for list actions
+        HBox buttonBar = new HBox(10);
+        buttonBar.getChildren().add(selectAllButton);
+
         // Add components to content
         content.getChildren().addAll(
                 new Label("Available Resources:"),
-                resourcesListView
+                resourcesListView,
+                buttonBar
         );
 
         getDialogPane().setContent(content);
@@ -51,28 +80,33 @@ public class ResourceSelectionDialog extends Dialog<Integer> {
         ButtonType selectButtonType = new ButtonType("Select", ButtonBar.ButtonData.OK_DONE);
         getDialogPane().getButtonTypes().addAll(selectButtonType, ButtonType.CANCEL);
 
-        // Set the result converter to extract the ID from the selected item
+        // Set the result converter to extract the IDs from the selected items
         setResultConverter(dialogButton -> {
             if (dialogButton == selectButtonType) {
-                String selectedItem = resourcesListView.getSelectionModel().getSelectedItem();
-                if (selectedItem != null && selectedItem.contains("ID:")) {
-                    try {
-                        // Extract the ID more reliably
-                        int startIndex = selectedItem.indexOf("ID:") + 3;
-                        int endIndex = selectedItem.indexOf(")", startIndex);
-                        if (endIndex > startIndex) {
-                            String idStr = selectedItem.substring(startIndex, endIndex).trim();
-                            int id = Integer.parseInt(idStr);
-                            System.out.println("Selected resource ID: " + id);
-                            return id;
+                List<Integer> selectedIds = new ArrayList<>();
+                List<String> selectedItems = resourcesListView.getSelectionModel().getSelectedItems();
+
+                for (String item : selectedItems) {
+                    if (item != null && item.contains("ID:")) {
+                        try {
+                            int startIndex = item.indexOf("ID:") + 3;
+                            int endIndex = item.indexOf(")", startIndex);
+                            if (endIndex > startIndex) {
+                                String idStr = item.substring(startIndex, endIndex).trim();
+                                int id = Integer.parseInt(idStr);
+                                selectedIds.add(id);
+                                System.out.println("Selected resource ID: " + id);
+                            }
+                        } catch (Exception e) {
+                            System.err.println("Error parsing resource ID: " + e.getMessage());
+                            e.printStackTrace();
                         }
-                    } catch (Exception e) {
-                        System.err.println("Error parsing resource ID: " + e.getMessage());
-                        e.printStackTrace();
                     }
                 }
+
+                return selectedIds;
             }
-            return -1;
+            return new ArrayList<>();
         });
 
         // Only load resources if we have a valid database connection
@@ -81,6 +115,45 @@ public class ResourceSelectionDialog extends Dialog<Integer> {
         } else {
             resourcesListView.setItems(FXCollections.observableArrayList(
                     "No database connection available"));
+        }
+    }
+
+    public void enableMultiSelect(boolean enableMultiSelect) {
+        if (enableMultiSelect) {
+            resourcesListView.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+            setHeaderText("Select one or more resources from " + tableName);
+            selectAllButton.setVisible(true); // Show Select All button
+        } else {
+            resourcesListView.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
+            setHeaderText("Select a resource from " + tableName);
+            selectAllButton.setVisible(false); // Hide Select All button
+        }
+    }
+
+    private void selectAllResources() {
+        resourcesListView.getSelectionModel().selectAll();
+    }
+
+    private void filterResources(String searchText) {
+        if (searchText == null || searchText.trim().isEmpty()) {
+            loadResources(); // Reset to full list
+            return;
+        }
+
+        searchText = searchText.toLowerCase().trim();
+
+        // Filter the existing items
+        List<String> filteredList = new ArrayList<>();
+        for (String item : resourcesListView.getItems()) {
+            if (item.toLowerCase().contains(searchText)) {
+                filteredList.add(item);
+            }
+        }
+
+        if (filteredList.isEmpty()) {
+            resourcesListView.setItems(FXCollections.observableArrayList("No matching resources found"));
+        } else {
+            resourcesListView.setItems(FXCollections.observableArrayList(filteredList));
         }
     }
 
@@ -109,7 +182,7 @@ public class ResourceSelectionDialog extends Dialog<Integer> {
                     resourceList = loadP6Resources(conn);
                 } else {
                     // Generic approach for other tables
-                    resourceList = loadGenericResources(conn);
+                    resourceList = loadGenericResources(conn, tableName);
                 }
             } else {
                 // Table doesn't exist, try a fallback
@@ -231,9 +304,9 @@ public class ResourceSelectionDialog extends Dialog<Integer> {
         return resourceList;
     }
 
-    private void loadGenericResources() {
+    private List<String> loadGenericResources(Connection conn, String tableName) {
         List<String> resourceList = new ArrayList<>();
-        try (Connection conn = dbManager.getConnection()) {
+        try {
             // Get metadata for the table
             java.sql.DatabaseMetaData metaData = conn.getMetaData();
             ResultSet columns = metaData.getColumns(null, null, tableName, null);
@@ -245,11 +318,14 @@ public class ResourceSelectionDialog extends Dialog<Integer> {
 
             while (columns.next()) {
                 String columnName = columns.getString("COLUMN_NAME").toUpperCase();
-                if (columnName.contains("ID") && idColumn == null) {
+                if ((columnName.contains("ID") || columnName.equals("PERSON_ID") ||
+                        columnName.equals("RSRC_ID")) && idColumn == null) {
                     idColumn = columnName;
-                } else if ((columnName.contains("NAME") || columnName.equals("FULL_NAME")) && nameColumn == null) {
+                } else if ((columnName.contains("NAME") || columnName.equals("FULL_NAME"))
+                        && nameColumn == null) {
                     nameColumn = columnName;
-                } else if (columnName.contains("EMAIL") && emailColumn == null) {
+                } else if ((columnName.contains("EMAIL") || columnName.equals("EMAIL_ADDRESS"))
+                        && emailColumn == null) {
                     emailColumn = columnName;
                 }
             }
@@ -285,11 +361,11 @@ public class ResourceSelectionDialog extends Dialog<Integer> {
                 resourceList.add("Could not identify required columns in table");
             }
         } catch (SQLException e) {
-            showError("Database Error", "Failed to load resources: " + e.getMessage());
+            System.err.println("Failed to load resources from " + tableName + ": " + e.getMessage());
             e.printStackTrace();
         }
 
-        resourcesListView.setItems(FXCollections.observableArrayList(resourceList));
+        return resourceList;
     }
 
     private void showError(String title, String message) {

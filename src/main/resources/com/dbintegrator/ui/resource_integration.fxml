@@ -24,7 +24,7 @@
                       promptText="Selected EBS Resource Will Appear Here"/>
         </VBox>
 
-        <VBox spacing="5" HBox.hgrow="ALWAYS" maxWidth="Infinity">
+        <VBox spacing="5" HBox.hgrow="ALWAYS" maxWidth="Infinity" visible="false">
             <Label text="P6 Resources:" />
             <Label fx:id="destResourceLabel" text="No P6 resource selected" style="-fx-font-weight: bold;" />
             <Button fx:id="selectDestResourceButton" text="Select P6 Resource" disable="true"/>
@@ -36,7 +36,7 @@
         </VBox>
     </HBox>
 
-    <!-- Table Selection Area - Fixed to rsrc and hr_all_people -->
+    <!-- Table Selection Area - Fixed to rsrc and hr_all_people
     <HBox spacing="5" alignment="CENTER_LEFT" prefHeight="5" visible="true">
         <VBox spacing="5" HBox.hgrow="ALWAYS" maxWidth="Infinity">
             <Label text="EBS Resource Table:" />
@@ -47,7 +47,7 @@
             <Label text="P6 Resource Table:" />
             <TextField fx:id="destTableField" text="RSRC" editable="false" />
         </VBox>
-    </HBox>
+    </HBox>-->
 
     <!-- Column Mapping Area -->
     <SplitPane dividerPositions="0.5" orientation="VERTICAL" VBox.vgrow="ALWAYS">

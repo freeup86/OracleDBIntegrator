@@ -166,7 +166,7 @@ public class TaskIntegrationController {
             return;
         }
 
-        String tableName = isSource ? "PROJECTS" : "PA_PROJECTS";
+        String tableName = isSource ? "PROJECT" : "PA_PROJECTS";
 
         // Use ProjectSelectionDialog instead of MultiProjectSelectionDialog
         ProjectSelectionDialog dialog = new ProjectSelectionDialog(dbManager, tableName, isSource);

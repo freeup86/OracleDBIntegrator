@@ -28,7 +28,7 @@ public class TestDatabaseManager {
                 System.err.println("Error listing tables: " + e.getMessage());
             }
 
-            printProjectTableContents(connectionManager, "PROJECTS");
+            printProjectTableContents(connectionManager, "PROJECT");
             printResourceTableContents(connectionManager, "RSRC");
         } catch (SQLException e) {
             throw new SQLException("Failed to set up source test database", e);
@@ -60,28 +60,28 @@ public class TestDatabaseManager {
             // Drop existing tables to avoid conflicts
             stmt.execute("DROP TABLE IF EXISTS TASKS");
             stmt.execute("DROP TABLE IF EXISTS RSRC");
-            stmt.execute("DROP TABLE IF EXISTS PROJECTS");
+            stmt.execute("DROP TABLE IF EXISTS PROJECT");
 
             // Create projects table with more detailed projects
-            stmt.execute("CREATE TABLE PROJECTS (" +
+            stmt.execute("CREATE TABLE PROJECT (" +
                     "id NUMBER PRIMARY KEY, " +
                     "name VARCHAR2(100) NOT NULL, " +
                     "description VARCHAR2(500))");
 
             // Insert expanded set of sample projects
-            stmt.execute("INSERT INTO PROJECTS VALUES " +
+            stmt.execute("INSERT INTO PROJECT VALUES " +
                     "(1, 'Enterprise Resource Planning (ERP) Implementation', " +
                     "'Comprehensive ERP system rollout across organization')");
-            stmt.execute("INSERT INTO PROJECTS VALUES " +
+            stmt.execute("INSERT INTO PROJECT VALUES " +
                     "(2, 'Customer Relationship Management (CRM) Upgrade', " +
                     "'Modernizing customer engagement and tracking system')");
-            stmt.execute("INSERT INTO PROJECTS VALUES " +
+            stmt.execute("INSERT INTO PROJECT VALUES " +
                     "(3, 'Supply Chain Optimization Project', " +
                     "'Improving logistics and supply chain efficiency')");
-            stmt.execute("INSERT INTO PROJECTS VALUES " +
+            stmt.execute("INSERT INTO PROJECT VALUES " +
                     "(4, 'Digital Transformation Initiative', " +
                     "'Comprehensive digital strategy and implementation')");
-            stmt.execute("INSERT INTO PROJECTS VALUES " +
+            stmt.execute("INSERT INTO PROJECT VALUES " +
                     "(5, 'Cybersecurity Enhancement Program', " +
                     "'Upgrading and fortifying organizational cybersecurity infrastructure')");
 
@@ -96,7 +96,7 @@ public class TestDatabaseManager {
                     "priority VARCHAR2(50), " +
                     "start_date DATE, " +
                     "end_date DATE, " +
-                    "FOREIGN KEY (project_id) REFERENCES PROJECTS(id))");
+                    "FOREIGN KEY (project_id) REFERENCES PROJECT(id))");
 
             // Insert sample tasks for each project
             // Project 1: ERP Implementation

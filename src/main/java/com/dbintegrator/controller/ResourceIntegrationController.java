@@ -17,9 +17,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 public class ResourceIntegrationController {
     // FXML Components
@@ -45,7 +43,8 @@ public class ResourceIntegrationController {
     private DatabaseMetadataService sourceMetadataService;
     private DatabaseMetadataService destMetadataService;
 
-    private Resource selectedSourceResource;
+    // Modified to support multiple source resources
+    private List<Resource> selectedSourceResources = new ArrayList<>();
     private Resource selectedDestResource;
     private ObservableList<ColumnMapping> resourceMappings = FXCollections.observableArrayList();
 
@@ -90,23 +89,33 @@ public class ResourceIntegrationController {
 
         // Initialize labels
         if (sourceResourceLabel != null) {
-            sourceResourceLabel.setText("No EBS resource selected");
+            sourceResourceLabel.setText("No EBS resources selected");
         }
 
         if (destResourceLabel != null) {
-            destResourceLabel.setText("No P6 resource selected");
+            destResourceLabel.setText("Optional: Select P6 resource (for update only)");
+        }
+
+        // Update execute button text to reflect merge behavior
+        if (executeResourceIntegrationButton != null) {
+            executeResourceIntegrationButton.setText("Create/Update P6 Resources");
+        }
+
+        // Hide manual mapping buttons as we'll use auto-mapping
+        if (addResourceMappingButton != null) {
+            addResourceMappingButton.setVisible(false);
         }
     }
 
     private void setupEventHandlers() {
         if (selectSourceResourceButton != null) {
             selectSourceResourceButton.setOnAction(event -> selectResource(true));
-            selectSourceResourceButton.setTooltip(new Tooltip("Select an EBS resource from HR_ALL_PEOPLE table"));
+            selectSourceResourceButton.setTooltip(new Tooltip("Select EBS resources from HR_ALL_PEOPLE table"));
         }
 
         if (selectDestResourceButton != null) {
             selectDestResourceButton.setOnAction(event -> selectResource(false));
-            selectDestResourceButton.setTooltip(new Tooltip("Select a P6 resource from RSRC table"));
+            selectDestResourceButton.setTooltip(new Tooltip("Select a P6 resource from RSRC table (optional)"));
         }
 
         if (addResourceMappingButton != null) {
@@ -200,39 +209,55 @@ public class ResourceIntegrationController {
 
         ResourceSelectionDialog dialog = new ResourceSelectionDialog(effectiveDbManager, tableName, !isSource);
 
-        Optional<Integer> result = dialog.showAndWait();
-        System.out.println("Dialog result: " + (result.isPresent() ? result.get() : "none"));
+        // Enable multi-select for EBS resources (source)
+        if (isSource) {
+            dialog.enableMultiSelect(true);
+        } else {
+            dialog.enableMultiSelect(false);
+        }
 
-        if (result.isPresent() && result.get() > 0) {
+        Optional<List<Integer>> result = dialog.showAndWait();
+
+        if (result.isPresent() && !result.get().isEmpty()) {
             try {
-                Resource selectedResource = getResourceById(effectiveDbManager, tableName, result.get());
-                System.out.println("Resource retrieved: " + (selectedResource != null ?
-                        selectedResource.getName() + " (ID: " + selectedResource.getId() + ")" : "null"));
+                if (isSource) {
+                    // Handle multiple selections for EBS resources
+                    selectedSourceResources.clear();
 
-                if (selectedResource != null) {
-                    if (isSource) {
-                        this.selectedSourceResource = selectedResource;
-                        System.out.println("Set source resource to: " + selectedResource.getName());
-                    } else {
-                        this.selectedDestResource = selectedResource;
-                        System.out.println("Set destination resource to: " + selectedResource.getName());
+                    for (Integer resourceId : result.get()) {
+                        Resource resource = getResourceById(effectiveDbManager, tableName, resourceId);
+                        if (resource != null) {
+                            selectedSourceResources.add(resource);
+                        }
                     }
 
-                    // Ensure UI updates happen on the JavaFX thread
-                    Platform.runLater(() -> {
-                        updateResourceLabel(isSource);
-                        checkExecuteButtonStatus();
-                    });
+                    updateSourceResourceLabel();
 
                     // Log selection
                     if (logTextArea != null) {
-                        logTextArea.appendText("Selected " + (isSource ? "EBS" : "P6") +
-                                " resource: " + selectedResource.getName() +
-                                " (ID: " + selectedResource.getId() + ")\n");
+                        logTextArea.appendText("Selected " + selectedSourceResources.size() +
+                                " EBS resource(s)\n");
                     }
                 } else {
-                    System.err.println("Failed to retrieve resource with ID: " + result.get());
+                    // For P6 resource (destination), still single selection
+                    int resourceId = result.get().get(0);
+                    selectedDestResource = getResourceById(effectiveDbManager, tableName, resourceId);
+
+                    if (selectedDestResource != null) {
+                        updateResourceLabel(false);
+
+                        // Log selection
+                        if (logTextArea != null) {
+                            logTextArea.appendText("Selected P6 resource: " +
+                                    selectedDestResource.getName() + " (ID: " +
+                                    selectedDestResource.getId() + ")\n");
+                        }
+                    }
                 }
+
+                // Check execute button status
+                checkExecuteButtonStatus();
+
             } catch (SQLException e) {
                 System.err.println("SQL Error retrieving resource: " + e.getMessage());
                 e.printStackTrace();
@@ -360,27 +385,50 @@ public class ResourceIntegrationController {
         return null;
     }
 
+    // Method for handling a single resource (existing)
     private void updateResourceLabel(boolean isSource) {
-        Resource resource = isSource ? selectedSourceResource : selectedDestResource;
-        Label label = isSource ? sourceResourceLabel : destResourceLabel;
-        TextArea detailsArea = isSource ? sourceResourceDetailsArea : destResourceDetailsArea;
-
-        System.out.println("Updating " + (isSource ? "source" : "destination") + " resource label with: " +
-                (resource != null ? resource.getName() : "null"));
-
-        if (resource == null) {
-            label.setText("No " + (isSource ? "EBS" : "P6") + " resource selected");
-            detailsArea.clear();
-            detailsArea.setPromptText("Selected " + (isSource ? "EBS" : "P6") + " Resource Will Appear Here");
+        if (isSource) {
+            // For source resources, use the new multi-resource method
+            updateSourceResourceLabel();
         } else {
-            label.setText((isSource ? "EBS" : "P6") + " Resource: " + resource.getName());
+            // For destination resource
+            if (selectedDestResource == null) {
+                destResourceLabel.setText("No P6 resource selected");
+                destResourceDetailsArea.clear();
+                destResourceDetailsArea.setPromptText("Selected P6 Resource Will Appear Here");
+            } else {
+                destResourceLabel.setText("P6 Resource: " + selectedDestResource.getName());
+
+                // Build resource details
+                destResourceDetailsArea.setText(
+                        selectedDestResource.getName() +
+                                " (ID: " + selectedDestResource.getId() +
+                                ", Email: " + selectedDestResource.getEmail() + ")"
+                );
+            }
+        }
+    }
+
+    // New method for handling multiple source resources
+    private void updateSourceResourceLabel() {
+        if (selectedSourceResources.isEmpty()) {
+            sourceResourceLabel.setText("No EBS resources selected");
+            sourceResourceDetailsArea.clear();
+            sourceResourceDetailsArea.setPromptText("Selected EBS Resources Will Appear Here");
+        } else {
+            int count = selectedSourceResources.size();
+            sourceResourceLabel.setText("EBS Resources: " + count + " selected");
 
             // Build resource details
-            detailsArea.setText(
-                    resource.getName() +
-                            " (ID: " + resource.getId() +
-                            ", Email: " + resource.getEmail() + ")"
-            );
+            StringBuilder details = new StringBuilder();
+            for (Resource resource : selectedSourceResources) {
+                details.append(resource.getName())
+                        .append(" (ID: ").append(resource.getId())
+                        .append(", Email: ").append(resource.getEmail())
+                        .append(")\n");
+            }
+
+            sourceResourceDetailsArea.setText(details.toString());
         }
     }
 
@@ -419,12 +467,74 @@ public class ResourceIntegrationController {
 
             Platform.runLater(() -> {
                 listView.setItems(FXCollections.observableArrayList(columns));
-                checkMappingAvailability();
+
+                // If both source and destination columns are loaded, create automatic mappings
+                if (!sourceColumnsListView.getItems().isEmpty() && !destColumnsListView.getItems().isEmpty()) {
+                    autoCreateResourceMappings();
+                }
             });
         } catch (SQLException e) {
             System.err.println("Error loading table columns for " + (isSource ? "source" : "destination") +
                     " table: " + e.getMessage());
             e.printStackTrace();
+        }
+    }
+
+    // Automatic mapping creation between HR_ALL_PEOPLE and RSRC tables
+    private void autoCreateResourceMappings() {
+        if (sourceColumnsListView.getItems().isEmpty() || destColumnsListView.getItems().isEmpty()) {
+            logTextArea.appendText("Cannot create mappings: column lists not loaded\n");
+            return;
+        }
+
+        // Clear existing mappings
+        resourceMappings.clear();
+
+        // Create a mapping for known equivalent fields
+        Map<String, String> knownMappings = new HashMap<>();
+        knownMappings.put("PERSON_ID", "RSRC_ID");
+        knownMappings.put("FULL_NAME", "NAME");
+        knownMappings.put("EMAIL_ADDRESS", "EMAIL");
+        knownMappings.put("PHONE_NUMBER", "PHONE");
+        knownMappings.put("DEPARTMENT_NAME", "DEPARTMENT");
+        knownMappings.put("JOB_TITLE", "ROLE");
+
+        // Find matching columns in both tables
+        for (TableColumn sourceColumn : sourceColumnsListView.getItems()) {
+            String sourceColumnName = sourceColumn.getName();
+
+            // Check if this source column has a known mapping
+            if (knownMappings.containsKey(sourceColumnName)) {
+                String destColumnName = knownMappings.get(sourceColumnName);
+
+                // Find the matching destination column
+                TableColumn destColumn = null;
+                for (TableColumn col : destColumnsListView.getItems()) {
+                    if (col.getName().equals(destColumnName)) {
+                        destColumn = col;
+                        break;
+                    }
+                }
+
+                if (destColumn != null) {
+                    // Create the mapping
+                    ColumnMapping mapping = new ColumnMapping(SOURCE_TABLE_NAME, sourceColumn, DEST_TABLE_NAME, destColumn);
+                    resourceMappings.add(mapping);
+                    logTextArea.appendText("Created automatic mapping: " + sourceColumnName + " → " + destColumnName + "\n");
+                }
+            }
+        }
+
+        if (resourceMappings.isEmpty()) {
+            logTextArea.appendText("No automatic mappings could be created\n");
+        } else {
+            logTextArea.appendText("Created " + resourceMappings.size() + " automatic mappings\n");
+            // Update the UI
+            resourceMappingsListView.setItems(resourceMappings);
+
+            // Enable/disable buttons
+            removeResourceMappingButton.setDisable(resourceMappings.isEmpty());
+            checkExecuteButtonStatus();
         }
     }
 
@@ -493,15 +603,29 @@ public class ResourceIntegrationController {
         }
     }
 
+    private void checkExecuteButtonStatus() {
+        boolean canExecute = !selectedSourceResources.isEmpty() && !resourceMappings.isEmpty();
+
+        Platform.runLater(() -> {
+            if (executeResourceIntegrationButton != null) {
+                executeResourceIntegrationButton.setDisable(!canExecute);
+            }
+        });
+    }
+
     private void executeResourceIntegration() {
         if (resourceMappings.isEmpty()) {
-            showError("Integration Error", "No column mappings defined.");
-            return;
+            // Try to create mappings if they don't exist
+            autoCreateResourceMappings();
+
+            if (resourceMappings.isEmpty()) {
+                showError("Integration Error", "No column mappings defined and automatic mapping failed.");
+                return;
+            }
         }
 
-        if (selectedSourceResource == null || selectedDestResource == null) {
-            showError("Resource Selection Required",
-                    "Please select both source and destination resources.");
+        if (selectedSourceResources.isEmpty()) {
+            showError("Resource Selection Required", "Please select at least one source EBS resource.");
             return;
         }
 
@@ -525,31 +649,40 @@ public class ResourceIntegrationController {
             }
 
             // Create integration service
-            DataIntegrationService integrationService =
-                    new DataIntegrationService(ebsDbManager, p6DbManager);
+            DataIntegrationService integrationService = new DataIntegrationService(ebsDbManager, p6DbManager);
 
-            // Log current integration pair
-            if (logTextArea != null) {
-                logTextArea.appendText("Integrating source resource (EBS) " +
-                        selectedSourceResource.getName() + " (ID: " + selectedSourceResource.getId() +
-                        ") to destination resource (P6) " + selectedDestResource.getName() +
-                        " (ID: " + selectedDestResource.getId() + ")\n");
+            int totalRowsMerged = 0;
+
+            // Process each selected source resource
+            for (Resource sourceResource : selectedSourceResources) {
+                // Log current integration
+                if (logTextArea != null) {
+                    logTextArea.appendText("Processing EBS resource: " +
+                            sourceResource.getName() + " (ID: " + sourceResource.getId() + ")\n");
+                }
+
+                // Create source WHERE clause for this resource
+                String sourceWhereClause = "PERSON_ID = " + sourceResource.getId();
+
+                // Use email as the match column between EBS and P6
+                String sourceMatchColumn = "EMAIL_ADDRESS";
+                String destMatchColumn = "EMAIL";
+
+                // Perform integration using the merge method
+                int rowsMerged = integrationService.mergeData(
+                        resourceMappings,
+                        sourceWhereClause,
+                        destMatchColumn,
+                        sourceMatchColumn
+                );
+
+                totalRowsMerged += rowsMerged;
             }
 
-            // Create WHERE clauses for source and destination resources with updated column names
-            String sourceWhereClause = "PERSON_ID = " + selectedSourceResource.getId();
-            String destWhereClause = "RSRC_ID = " + selectedDestResource.getId();
-
-            // Perform integration
-            int rowsUpdated = integrationService.integrateData(
-                    resourceMappings,
-                    sourceWhereClause,
-                    destWhereClause
-            );
-
             if (logTextArea != null) {
-                logTextArea.appendText("Resource integration completed. " +
-                        "Total rows updated: " + rowsUpdated + "\n");
+                logTextArea.appendText("Resource integration completed for " +
+                        selectedSourceResources.size() + " resources. " +
+                        "Total rows merged (created or updated): " + totalRowsMerged + "\n");
             }
 
         } catch (SQLException e) {
@@ -558,18 +691,6 @@ public class ResourceIntegrationController {
                 logTextArea.appendText("Integration failed: " + e.getMessage() + "\n");
             }
         }
-    }
-
-    private void checkExecuteButtonStatus() {
-        boolean canExecute = selectedSourceResource != null &&
-                selectedDestResource != null &&
-                !resourceMappings.isEmpty();
-
-        Platform.runLater(() -> {
-            if (executeResourceIntegrationButton != null) {
-                executeResourceIntegrationButton.setDisable(!canExecute);
-            }
-        });
     }
 
     public void forceResourceLoading() {
